@@ -31,6 +31,53 @@ void main() {
       expect(stats.subjects.first.title, 'Math');
     });
 
+    test('a session logged on the phone still shows when ss only has the timer',
+        () {
+      final dl = <String, dynamic>{
+        'sm': 7200000,
+        'ss': [
+          {'id': 1, 'tt': 'Math', 'sm': 3600000},
+        ],
+        // Manually logged from the phone: present only in the raw sessions.
+        'ls': [
+          {'sb': 'Math', 'sm': 3600000},
+          {'sb': 'Biology', 'sm': 10800000},
+        ],
+      };
+
+      final stats = DailyStats.fromDailyLog(dl);
+
+      expect(stats.subjects.length, 2);
+      expect(stats.msFor(title: 'Math'), 3600000);
+      expect(stats.msFor(title: 'Biology'), 10800000);
+      expect(stats.totalMs, 14400000);
+    });
+
+    test('a subject that only exists in ss still shows', () {
+      final dl = <String, dynamic>{
+        'ss': [
+          {'id': 4, 'tt': 'Chemistry', 'sm': 900000},
+        ],
+        'ls': <dynamic>[],
+      };
+
+      final stats = DailyStats.fromDailyLog(dl);
+      expect(stats.subjects.single.title, 'Chemistry');
+      expect(stats.totalMs, 900000);
+    });
+
+    test('segments are summed inside a source, not maxed', () {
+      final dl = <String, dynamic>{
+        'ls': [
+          {'sb': 'Math', 'sm': 600000},
+          {'sb': 'Math', 'sm': 600000},
+          {'sb': 'Math', 'sm': 600000},
+        ],
+      };
+
+      expect(DailyStats.fromDailyLog(dl).msFor(title: 'Math'), 1800000);
+    });
+
     test('falls back to grouping sessions when ss is absent', () {
       final dl = <String, dynamic>{
         'sm': 3600000,

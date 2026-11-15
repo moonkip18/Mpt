@@ -5,7 +5,8 @@ import 'dart:io';
 import 'package:yaml/yaml.dart';
 
 void main() {
-  final doc = loadYaml(File('.github/workflows/windows-build.yml').readAsStringSync());
+  final doc =
+      loadYaml(File('.github/workflows/windows-build.yml').readAsStringSync());
   final jobs = (doc as YamlMap)['jobs'] as YamlMap;
   stdout.writeln('workflow ok: ${doc['name']} -> jobs ${jobs.keys.join(', ')}');
   final steps = ((jobs['build'] as YamlMap)['steps'] as YamlList).length;

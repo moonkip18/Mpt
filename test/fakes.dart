@@ -82,19 +82,26 @@ class FakeTimerRepository extends TimerRepository {
 }
 
 class FakeSubjectRepository extends SubjectRepository {
+  FakeSubjectRepository({this.subjects});
+
+  final List<SubjectModel>? subjects;
+
   @override
   Future<SubjectFetchResult> fetchSubjectsData({
     String language = 'en',
     String timezone = 'Asia/Tehran',
     int version = 810041,
   }) async {
-    return const SubjectFetchResult(
-      subjects: [
-        SubjectModel(id: 1, title: 'Mathematics', colorInt: 0xFF8FA6B8),
-        SubjectModel(id: 2, title: 'Biology', colorInt: 0xFF8FB89B),
-        SubjectModel(
-            id: 3, title: 'History of the Ancient World', colorInt: 0xFFB89B8F),
-      ],
+    return SubjectFetchResult(
+      subjects: subjects ??
+          const [
+            SubjectModel(id: 1, title: 'Mathematics', colorInt: 0xFF8FA6B8),
+            SubjectModel(id: 2, title: 'Biology', colorInt: 0xFF8FB89B),
+            SubjectModel(
+                id: 3,
+                title: 'History of the Ancient World',
+                colorInt: 0xFFB89B8F),
+          ],
       todayTotalMs: 5400000,
       todayRestMs: 0,
     );

@@ -54,7 +54,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.0
-          name: Mpt v0.1.0
-          body: Automated Windows build of Mpt.
+          tag_name: v0.2.0
+          name: Mpt v0.2.0
+          body: All subjects menu, app logo, and phone-side study now appears in the today panel.
           files: Mpt-windows-x64.zip

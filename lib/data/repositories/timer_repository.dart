@@ -42,10 +42,21 @@ class TimerRepository {
 
   /// Raw `dl` block of the current study day, used for totals and for the
   /// "is the phone already studying?" probe.
+  ///
+  /// The payload documents `ss` both inside and outside `dl` depending on the
+  /// build, so the top-level copy is folded in before returning.
   Future<Map<String, dynamic>?> fetchDailyLogDl([DateTime? date]) async {
     final log = await fetchDailyLog(date ?? DateTime.now());
-    final dl = log?['dl'];
-    return dl is Map ? Map<String, dynamic>.from(dl) : null;
+    if (log == null) return null;
+
+    final raw = log['dl'];
+    final dl =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    if (dl['ss'] is! List && log['ss'] is List) dl['ss'] = log['ss'];
+    if (dl['ls'] is! List && log['ls'] is List) dl['ls'] = log['ls'];
+    if (dl['sm'] == null && log['sm'] != null) dl['sm'] = log['sm'];
+    if (dl['rm'] == null && log['rm'] != null) dl['rm'] = log['rm'];
+    return dl;
   }
 
   /// True when a session with this subject and start instant is already stored
@@ -159,16 +170,46 @@ class TimerRepository {
         fallback: 'Falha ao registrar estudo manual'));
   }
 
+  /// Day totals for the sidebar.
+  ///
+  /// YPT dates logs in the account's timezone, which may not be the machine's.
+  /// Asking for a specific date can therefore return an empty day even though
+  /// the phone logged hours, so an empty answer is retried without the `date`
+  /// parameter and the server's own "today" is used instead.
   Future<Map<String, dynamic>?> fetchDailyLog(DateTime date) async {
+    final dated = await _fetchDay(StudyDateHelper.getStudyDateString(date));
+    if (_hasAnySessions(dated)) return dated;
+
+    final undated = await _fetchDay(null);
+    if (_hasAnySessions(undated)) return undated;
+
+    return dated ?? undated;
+  }
+
+  Future<Map<String, dynamic>?> _fetchDay(String? dateStr) async {
     try {
-      final dateStr = StudyDateHelper.getStudyDateString(date);
-      final response = await _apiClient.get('/logs/day?date=$dateStr');
+      final path = dateStr == null ? '/logs/day' : '/logs/day?date=$dateStr';
+      final response = await _apiClient.get(path);
       final data = response.data;
-      if (data is Map<String, dynamic> && data['s'] == true) {
-        return data;
-      }
+      if (data is Map<String, dynamic> && data['s'] == true) return data;
     } catch (_) {}
     return null;
+  }
+
+  bool _hasAnySessions(Map<String, dynamic>? log) {
+    if (log == null) return false;
+    final dl = log['dl'];
+    final maps = <dynamic>[dl, log];
+    for (final m in maps) {
+      if (m is! Map) continue;
+      final ls = m['ls'];
+      if (ls is List && ls.isNotEmpty) return true;
+      final ss = m['ss'];
+      if (ss is List && ss.isNotEmpty) return true;
+      final sm = m['sm'];
+      if (sm is num && sm > 0) return true;
+    }
+    return false;
   }
 
   Future<DateTime> syncTime() async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../core/theme/mpt_theme.dart';
 import '../../data/daily_stats.dart';
@@ -19,16 +20,31 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     Future.microtask(() {
       final sync = ref.read(offlineSyncNotifierProvider.notifier);
       if (ref.read(offlineSyncNotifierProvider).hasPending) {
         sync.syncNow();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  /// Coming back to the window is the moment phone-side study is most likely to
+  /// have happened, so pull the day's totals again instead of waiting for the
+  /// next poll.
+  @override
+  void onWindowFocus() {
+    ref.read(timerProvider.notifier).refreshStats();
   }
 
   @override
@@ -263,21 +279,179 @@ class _SubjectStrip extends ConsumerWidget {
 
     return SizedBox(
       height: 30,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: subjects.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final s = subjects[index];
-          final selected = s.id == currentId;
-          return _SubjectChip(
-            subject: s,
-            selected: selected,
-            onTap: enabled
-                ? () => ref.read(timerProvider.notifier).selectSubject(s)
-                : null,
-          );
-        },
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: subjects.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final s = subjects[index];
+                final selected = s.id == currentId;
+                return _SubjectChip(
+                  subject: s,
+                  selected: selected,
+                  onTap: enabled
+                      ? () => ref.read(timerProvider.notifier).selectSubject(s)
+                      : null,
+                );
+              },
+            ),
+          ),
+          if (subjects.length > 1) ...[
+            const SizedBox(width: 8),
+            _AllSubjectsButton(
+              subjects: subjects,
+              currentId: currentId,
+              enabled: enabled,
+              onSelected: (s) =>
+                  ref.read(timerProvider.notifier).selectSubject(s),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The strip only has room for a handful of chips, so every subject is also one
+/// click away in a full list — with its time for today next to it.
+class _AllSubjectsButton extends ConsumerStatefulWidget {
+  const _AllSubjectsButton({
+    required this.subjects,
+    required this.currentId,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final List<SubjectModel> subjects;
+  final int? currentId;
+  final bool enabled;
+  final ValueChanged<SubjectModel> onSelected;
+
+  @override
+  ConsumerState<_AllSubjectsButton> createState() => _AllSubjectsButtonState();
+}
+
+class _AllSubjectsButtonState extends ConsumerState<_AllSubjectsButton> {
+  bool _hover = false;
+
+  Future<void> _open() async {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+
+    final anchor = Rect.fromPoints(
+      box.localToGlobal(Offset.zero, ancestor: overlay),
+      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+    final stats = ref.read(timerProvider).displayStats;
+
+    final picked = await showMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
+      items: [
+        for (final s in widget.subjects)
+          PopupMenuItem<int>(
+            value: s.id,
+            height: 34,
+            padding: EdgeInsets.zero,
+            child: _MenuRow(
+              subject: s,
+              selected: s.id == widget.currentId,
+              todayMs: stats.msFor(title: s.title),
+            ),
+          ),
+      ],
+      constraints:
+          const BoxConstraints(minWidth: 220, maxWidth: 340, maxHeight: 360),
+    );
+
+    if (picked == null || !mounted || !widget.enabled) return;
+    for (final s in widget.subjects) {
+      if (s.id == picked) {
+        widget.onSelected(s);
+        return;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'All subjects',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: _open,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _hover ? MptColors.surface : Colors.transparent,
+              border: Border.all(
+                  color: _hover ? MptColors.lineStrong : MptColors.line),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: _hover ? MptColors.ink : MptColors.inkDim,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow(
+      {required this.subject, required this.selected, required this.todayMs});
+
+  final SubjectModel subject;
+  final bool selected;
+  final int todayMs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration:
+                BoxDecoration(color: subject.color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              subject.title,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: MptFonts.ui,
+                fontSize: 12.5,
+                color: selected ? MptColors.ink : MptColors.inkDim,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (todayMs > 0) ...[
+            const SizedBox(width: 14),
+            Text(
+              formatHm(todayMs),
+              style: MptText.label.copyWith(color: MptColors.inkFaint),
+            ),
+          ],
+        ],
       ),
     );
   }

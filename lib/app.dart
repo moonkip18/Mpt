@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -32,28 +34,38 @@ class _MptAppState extends ConsumerState<MptApp> with WindowListener {
     super.dispose();
   }
 
-  /// YPT keeps a session open until an explicit stop, so closing the window
-  /// mid-study would leave "studying" running forever on the account. Stop
-  /// first — the stop is queued offline if it cannot reach the server — then
-  /// let the window go.
+  bool _closing = false;
+
+  /// YPT keeps a session open until an explicit stop, so closing mid-study has
+  /// to stop it first — but an unreachable server must never make the window
+  /// look frozen. Every step here is bounded, and the process exits no matter
+  /// what happened.
   @override
-  void onWindowClose() async {
-    try {
-      final container = widget.container;
-      if (container.exists(timerProvider)) {
-        final notifier = container.read(timerProvider.notifier);
-        if (container.read(timerProvider).hasSession) {
-          await notifier
+  void onWindowClose() {
+    if (_closing) return;
+    _closing = true;
+
+    final container = widget.container;
+    Future<void>(() async {
+      try {
+        if (container.exists(timerProvider) &&
+            container.read(timerProvider).hasSession) {
+          await container
+              .read(timerProvider.notifier)
               .stop()
-              .timeout(const Duration(seconds: 8), onTimeout: () {});
+              .timeout(const Duration(milliseconds: 1500), onTimeout: () {});
         }
+      } catch (_) {
+        // The session snapshot stays on disk, so nothing is lost.
       }
-    } catch (_) {
-      // Never block the exit on a network problem.
-    }
-    try {
-      await windowManager.destroy();
-    } catch (_) {}
+      try {
+        await windowManager.destroy().timeout(
+              const Duration(milliseconds: 600),
+              onTimeout: () {},
+            );
+      } catch (_) {}
+      exit(0);
+    });
   }
 
   @override

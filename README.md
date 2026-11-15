@@ -15,8 +15,8 @@ Dark, hairline-ruled, one red accent — the look of `indexstudy.html`.
 Four things, on purpose:
 
 1. **Timer** — start / pause (rest) / stop, written to YPT with `POST /study/start`, `POST /study/stop` and `POST /study/study-plan/rest`. A session snapshots itself to disk, so a crash or a restart restores it instead of losing the time.
-2. **Subjects** — the same subject list as the account, with colours. Pick one with a click before starting.
-3. **Today by subject** — the right-hand panel is always visible: every subject studied today with its hours, a hairline bar sized against your biggest subject, and the live remainder of a running session folded in. No menus, no drilling in.
+2. **Subjects** — the same subject list as the account, with colours. Pick one with a click before starting; the strip shows as many chips as fit and the `›` control lists all of them, with today's time beside each.
+3. **Today by subject** — the right-hand panel is always visible: every subject studied today with its hours, a hairline bar sized against your biggest subject, and the live remainder of a running session folded in. Sessions logged on the phone count too, not just the ones started here.
 4. **Offline queue** — a stop that cannot reach YPT is queued in `SharedPreferences` and replayed later, with a duplicate guard.
 
 Plus a **mini player**: the same window, shrunk to 360×148 and pinned on top, with subject, clock and the two actions that matter.
@@ -29,9 +29,11 @@ Everything that remains is the code path that actually talks to YPT: `core/api`,
 
 ## How the numbers stay honest
 
-`/logs/day` returns both per-subject totals (`dl.ss`) and the raw session list (`dl.ls`). Desky summed both, which double counts every subject. Mpt parses the payload once, in `lib/data/daily_stats.dart`:
+`/logs/day` returns both per-subject totals (`ss`) and the raw session list (`ls`). Desky summed both, which double counts every subject, and it only ever looked at one list. Mpt parses the payload once, in `lib/data/daily_stats.dart`:
 
-- `dl.ss` wins when present; `dl.ls` is only a fallback.
+- Each list is summed on its own, then the larger total wins per subject — so a session YPT stored in only one of them still shows, and one stored in both is still counted once.
+- A dated request that comes back empty is retried without `date`, because YPT buckets the day in the account's timezone, which may not be the machine's.
+- The panel refreshes every 30 s, on window focus, and after every stop.
 - The running session is added as a *delta* (`sessionElapsedMs - lastSyncedMs`), so a pause that already reached the server is never counted again.
 - The panel therefore matches the phone, plus the seconds not yet sent.
 

@@ -244,6 +244,8 @@ class TimerNotifier extends StateNotifier<TimerState> {
         date: date,
         knownSubjects: state.subjects,
       );
+      debugPrint('[mpt] day $date total=${stats.totalMs}ms '
+          'subjects=${stats.subjects.map((s) => '${s.title}:${s.ms}').join(',')}');
       state = state.copyWith(stats: stats, lastStudyDate: date);
     } catch (_) {
       // Keep the previous numbers instead of flashing zeros.

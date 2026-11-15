@@ -95,12 +95,13 @@ class _LoginFormState extends ConsumerState<_LoginForm> {
       children: [
         Row(
           children: [
-            Container(
-              width: 7,
-              height: 7,
-              decoration: const BoxDecoration(
-                color: MptColors.accent,
-                shape: BoxShape.circle,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: Image.asset(
+                'assets/images/logo.png',
+                width: 20,
+                height: 20,
+                filterQuality: FilterQuality.medium,
               ),
             ),
             const SizedBox(width: 10),

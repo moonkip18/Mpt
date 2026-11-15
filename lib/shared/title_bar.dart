@@ -28,12 +28,13 @@ class MptTitleBar extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 16),
                 child: Row(
                   children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: const BoxDecoration(
-                        color: MptColors.accent,
-                        shape: BoxShape.circle,
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 17,
+                        height: 17,
+                        filterQuality: FilterQuality.medium,
                       ),
                     ),
                     const SizedBox(width: 10),

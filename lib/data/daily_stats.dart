@@ -78,56 +78,81 @@ class DailyStats {
       for (final s in knownSubjects) s.id: s.colorInt,
     };
 
-    final List<SubjectStat> stats;
+    // `ss` carries server totals per subject, `ls` the raw sessions. Neither is
+    // guaranteed to hold everything — a session logged on the phone can appear
+    // in only one of them — so each list is summed on its own and then the
+    // larger total wins per subject. Summing inside a source keeps split
+    // segments, and taking the max across sources still counts a segment that
+    // both lists happen to contain exactly once.
+    final ssTotals = <String, SubjectStat>{};
+    final lsTotals = <String, SubjectStat>{};
+
+    void addTo(Map<String, SubjectStat> into, String rawTitle, int? id, int ms,
+        int? colour) {
+      final title = rawTitle.trim();
+      if (title.isEmpty || ms <= 0) return;
+      final existing = into[title];
+      final resolved = colour ??
+          (id != null ? colourById[id] : null) ??
+          colourByName[title] ??
+          _fallbackColour(title);
+      into[title] = existing == null
+          ? SubjectStat(id: id, title: title, ms: ms, colorInt: resolved)
+          : SubjectStat(
+              id: existing.id ?? id,
+              title: title,
+              ms: existing.ms + ms,
+              colorInt: existing.colorInt,
+            );
+    }
 
     final rawSubjects = dl['ss'];
-    if (rawSubjects is List && rawSubjects.isNotEmpty) {
-      stats = <SubjectStat>[];
+    if (rawSubjects is List) {
       for (final item in rawSubjects) {
         if (item is! Map) continue;
-        final title = (item['tt'] ?? item['sb'] ?? '').toString().trim();
-        if (title.isEmpty) continue;
-        final id = _asNullableInt(item['id']);
-        final ms = _asInt(item['sm']);
-        if (ms <= 0) continue;
-        final colour = _asNullableInt(item['co']) ??
-            (id != null ? colourById[id] : null) ??
-            colourByName[title] ??
-            _fallbackColour(title);
-        stats.add(SubjectStat(id: id, title: title, ms: ms, colorInt: colour));
+        addTo(
+          ssTotals,
+          (item['tt'] ?? item['sb'] ?? '').toString(),
+          _asNullableInt(item['id']),
+          _asInt(item['sm']),
+          _asNullableInt(item['co']),
+        );
       }
-      stats.sort((a, b) => b.ms.compareTo(a.ms));
-    } else {
-      final byKey = <String, SubjectStat>{};
-      final rawSessions = dl['ls'];
-      if (rawSessions is List) {
-        for (final item in rawSessions) {
-          if (item is! Map) continue;
-          final title = (item['sb'] ?? '').toString().trim();
-          if (title.isEmpty) continue;
-          final id = _asNullableInt(item['id'] ?? item['subjectId']);
-          final ms = _asInt(item['sm']);
-          if (ms <= 0) continue;
-          final key = id != null ? 'id:$id' : 'name:$title';
-          final existing = byKey[key];
-          byKey[key] = SubjectStat(
-            id: id,
-            title: title,
-            ms: (existing?.ms ?? 0) + ms,
-            colorInt: existing?.colorInt ??
-                (id != null ? colourById[id] : null) ??
-                colourByName[title] ??
-                _fallbackColour(title),
-          );
-        }
-      }
-      stats = byKey.values.toList()..sort((a, b) => b.ms.compareTo(a.ms));
     }
+
+    final rawSessions = dl['ls'];
+    if (rawSessions is List) {
+      for (final item in rawSessions) {
+        if (item is! Map) continue;
+        addTo(
+          lsTotals,
+          (item['sb'] ?? item['tt'] ?? '').toString(),
+          _asNullableInt(item['id'] ?? item['subjectId']),
+          _asInt(item['sm']),
+          _asNullableInt(item['co']),
+        );
+      }
+    }
+
+    final merged = <String, SubjectStat>{};
+    for (final entry in [...ssTotals.values, ...lsTotals.values]) {
+      final existing = merged[entry.title];
+      merged[entry.title] = existing == null
+          ? entry
+          : SubjectStat(
+              id: existing.id ?? entry.id,
+              title: entry.title,
+              ms: existing.ms > entry.ms ? existing.ms : entry.ms,
+              colorInt: existing.colorInt,
+            );
+    }
+
+    final stats = merged.values.toList()..sort((a, b) => b.ms.compareTo(a.ms));
 
     final sumSubjects = stats.fold<int>(0, (sum, s) => sum + s.ms);
     return DailyStats(
       date: date,
-      totalMs: totalMs > 0 ? totalMs : sumSubjects,
+      totalMs: totalMs > sumSubjects ? totalMs : sumSubjects,
       restMs: restMs,
       subjects: stats,
     );

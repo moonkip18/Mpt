@@ -97,6 +97,11 @@ void main() {
       ),
     );
     await tester.pump();
+    // Assets decode off the main isolate; goldens need them already warm.
+    await tester.runAsync(() => precacheImage(
+          const AssetImage('assets/images/logo.png'),
+          tester.element(find.byType(HomeScreen)),
+        ));
     await tester.pump(const Duration(milliseconds: 60));
 
     if (running) {
@@ -117,6 +122,11 @@ void main() {
         child: MaterialApp(theme: MptTheme.build(), home: const LoginScreen()),
       ),
     );
+    await tester.pump();
+    await tester.runAsync(() => precacheImage(
+          const AssetImage('assets/images/logo.png'),
+          tester.element(find.byType(LoginScreen)),
+        ));
     await tester.pump();
 
     await expectLater(
