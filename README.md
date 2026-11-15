@@ -68,6 +68,20 @@ flutter build windows --release
 
 Both variables are already set at user level on this machine, so a normal terminal honours them.
 
+### Building without Visual Studio
+
+`flutter build windows` needs MSVC; there is no supported way around that check. The practical options:
+
+1. **VS Build Tools** (compiler only, no IDE), ~2.5 GB, needs admin once:
+   ```powershell
+   winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+   ```
+2. **GitHub Actions** — `.github/workflows/windows-build.yml` in this repo analyses, tests and builds on `windows-latest`, then uploads `Mpt-windows-x64.zip`. Push the folder to any GitHub repo and download the artifact; nothing is installed locally.
+3. **clang-cl + xwin + Ninja** — no admin, no VS: `flutter assemble` produces the AOT snapshot and asset bundle, then CMake/Ninja compiles the 19-file runner and the plugin C++ against the `flutter_windows.dll` and import library already in the SDK cache. Technical path only; the build is hand-driven.
+4. **Another machine** with VS and Flutter, then copy `build\windows\x64\runner\Release`.
+
+MinGW/gcc cannot be substituted (different C++ ABI than `flutter_windows.dll`), and a web build is not possible here because the app uses `dart:io` and `window_manager`.
+
 A `.env` is optional and only needed for Google sign-in:
 
 ```powershell
