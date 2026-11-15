@@ -1,0 +1,47 @@
+name: Windows build
+
+# Builds Mpt on a GitHub-hosted Windows runner, which already has the MSVC
+# toolchain this machine lacks. Download the artifact from the run page.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release
+        run: flutter build windows --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "build\windows\x64\runner\Release"
+          if (-not (Test-Path "$out\mpt.exe")) { throw "mpt.exe was not produced" }
+          Compress-Archive -Path "$out\*" -DestinationPath Mpt-windows-x64.zip -Force
+          Get-Item Mpt-windows-x64.zip | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mpt-windows-x64
+          path: Mpt-windows-x64.zip
+          if-no-files-found: error

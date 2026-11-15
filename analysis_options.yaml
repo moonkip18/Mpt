@@ -1,0 +1,12 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - windows/**
+
+linter:
+  rules:
+    # The ported YPT plumbing (auth, repositories, translations) predates this
+    # project's style; keep the analyzer focused on real errors.
+    curly_braces_in_flow_control_structures: false
