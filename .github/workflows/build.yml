@@ -20,6 +20,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Test
+        run: cargo test --locked
+
       - name: Build
         run: cargo build --release --locked
 
@@ -30,21 +33,43 @@ jobs:
           Copy-Item target/release/mpt.exe out/
           Copy-Item README.md out/readme.txt
           Compress-Archive -Path out/mpt.exe,out/readme.txt -DestinationPath Mpt-windows-x64.zip
+          Copy-Item out/mpt.exe Mpt.exe
+          $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($iscc) {
+            $version = ((Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value)
+            & $iscc.FullName assets/installer.iss /DAppVersion=$version "/DSourceDir=$(Resolve-Path out)" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+            Move-Item "assets/Mpt-Setup-$version.exe" Mpt-Setup-$version.exe
+          } else {
+            Write-Host "::warning::Inno Setup not found; skipping installer"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: Mpt-windows-x64
-          path: Mpt-windows-x64.zip
+          path: |
+            Mpt-windows-x64.zip
+            Mpt.exe
+            Mpt-Setup-*.exe
           if-no-files-found: error
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         # A repo whose Actions token is read-only cannot publish releases; the
-        # zip is still attached to the run as an artifact, so do not fail there.
+        # files are still attached to the run as an artifact, so do not fail.
         continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
-          files: Mpt-windows-x64.zip
+          files: |
+            Mpt-windows-x64.zip
+            Mpt.exe
+            Mpt-Setup-*.exe
           body: |
+            Added:
+            - Mpt-Setup-1.0.6.exe: a small installer — no admin prompt, installs to your user folder in a second, Start Menu shortcut, clean uninstall from Settings. The zip still works for portable use.
+            - In-app updates: "check for updates" in the subject panel. If a release is out, one click downloads it, the app swaps itself and reopens. No browser, no second installer.
+            - The updater needs a bare Mpt.exe on releases, so that is attached too.
+
             Fixed Bug:
             - No icon in alt-tab or on the taskbar: the window icon was fed the logo PNG's raw 3-bytes-per-pixel RGB data labelled as RGBA, so the system icon came out garbled and blank. The mark is now decoded to real RGBA once and shared by the title bar and the window icon.
+            - The exe's version metadata was stuck on 1.0.3 in Windows' properties while releases moved on.

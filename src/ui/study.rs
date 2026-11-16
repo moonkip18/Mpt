@@ -846,7 +846,86 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
         app.logout_requested = true;
     }
 
+    update_button(app, ui, Rect::from_min_max(
+        Pos2::new(inner.min.x + 180.0, footer_top + 12.0),
+        Pos2::new(inner.max.x - 34.0, footer_top + 34.0),
+    ));
+
     let _ = ctx;
+}
+
+/// Small "check for updates" control at the footer's right edge. Each state
+/// paints itself and answers clicks; the heavy work lives in `updater`'s
+/// worker threads, so this only reads the shared state.
+fn update_button(app: &mut MptApp, ui: &mut Ui, rect: Rect) {
+    let state = app.update.lock().unwrap().clone();
+    // Repaint while the state can move on its own (spinner, progress).
+    if matches!(state, crate::updater::UpdateState::Checking)
+        || matches!(state, crate::updater::UpdateState::Downloading { .. })
+    {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+    }
+
+    let (label, text_color, clickable): (String, Color32, bool) = match &state {
+        crate::updater::UpdateState::Idle => ("check for updates".into(), INK_FAINT, true),
+        crate::updater::UpdateState::Checking => ("checking…".into(), INK_FAINT, false),
+        crate::updater::UpdateState::UpToDate => ("up to date".into(), INK_FAINT, true),
+        crate::updater::UpdateState::Available { version, .. } => {
+            (format!("update to {version}"), ACCENT, true)
+        }
+        crate::updater::UpdateState::Downloading { progress } => (
+            format!("updating… {}", (progress * 100.0) as u32),
+            INK_DIM,
+            false,
+        ),
+        crate::updater::UpdateState::Ready => ("restart to finish".into(), ACCENT, true),
+        crate::updater::UpdateState::Failed(_) => ("retry update".into(), ACCENT, true),
+    };
+
+    let resp = ui.interact(rect, sid("mpt.update"), Sense::click());
+    let hover = resp.hovered() && clickable;
+    ui.painter().text(
+        Pos2::new(rect.right(), rect.center().y),
+        Align2::RIGHT_CENTER,
+        label,
+        font(11.0, fonts::MONO),
+        if hover { Color32::WHITE } else { text_color },
+    );
+    if let crate::updater::UpdateState::Downloading { progress } = &state {
+        // 2 px progress line under the label, like the day bars.
+        let w = rect.width() * progress.clamp(0.0, 1.0);
+        ui.painter().rect_filled(
+            Rect::from_min_size(Pos2::new(rect.right() - w, rect.max.y + 2.0), Vec2::new(w, 2.0)),
+            0.0,
+            ACCENT,
+        );
+    }
+    if hover {
+        if let crate::updater::UpdateState::Failed(e) = &state {
+            resp.clone().on_hover_text(e.clone());
+        } else if let crate::updater::UpdateState::Available { size, .. } = &state {
+            resp.clone()
+                .on_hover_text(format!("{:.1} MB", *size as f32 / 1_048_576.0));
+        }
+    }
+
+    if !resp.clicked() || !clickable {
+        return;
+    }
+    match state {
+        crate::updater::UpdateState::Idle
+        | crate::updater::UpdateState::UpToDate
+        | crate::updater::UpdateState::Failed(_) => {
+            crate::updater::check(app.update.clone());
+        }
+        crate::updater::UpdateState::Available { url, .. } => {
+            crate::updater::download(app.update.clone(), url);
+        }
+        crate::updater::UpdateState::Ready => {
+            crate::updater::apply(app.update.clone());
+        }
+        crate::updater::UpdateState::Checking | crate::updater::UpdateState::Downloading { .. } => {}
+    }
 }
 
 // ----------------------------------------------------------------- mini player

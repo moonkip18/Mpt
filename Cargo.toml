@@ -1,6 +1,6 @@
 [package]
 name = "mpt"
-version = "1.0.3"
+version = "1.0.6"
 edition = "2024"
 description = "A minimal desktop study timer for Yeolpumta"
 repository = "https://github.com/moonkip18/Mpt"

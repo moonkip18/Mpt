@@ -31,6 +31,7 @@ mod theme;
 mod timer;
 mod timer_session_store;
 mod ui;
+mod updater;
 mod utils;
 
 use std::sync::mpsc::Sender;
@@ -100,6 +101,8 @@ pub struct MptApp {
     /// When the timer thread first reported real data; drives the one-shot
     /// 300 ms settle that marks "the app is loaded". None until then.
     pub(crate) loaded_at: Option<Instant>,
+    /// In-app update flow, polled by the footer button.
+    pub(crate) update: updater::UpdateShared,
 }
 
 /// Everything the timer thread needs, parked until authentication happens.
@@ -171,6 +174,7 @@ impl MptApp {
             background: background::Background::new(),
             positioned: false,
             loaded_at: None,
+            update: Arc::new(Mutex::new(updater::UpdateState::Idle)),
         }
     }
 
@@ -456,6 +460,9 @@ impl MptApp {
 
 fn main() -> eframe::Result {
     install_panic_log();
+    // The previous instance renamed itself out of the way when it updated;
+    // give its handle a moment to close, then clear the leftover.
+    updater::cleanup_old();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(WINDOW_TITLE)
         .with_decorations(false)
