@@ -47,9 +47,14 @@ fn parse_version(s: &str) -> Vec<u64> {
 
 /// True when the published release is not exactly this build. The version
 /// line is now a simple counter (0.1 … 0.9, then 1.0), so "different" is
-/// the right test — a rebuild can go down as well as up.
+/// the right test — a rebuild can go down as well as up. An unparseable
+/// tag (empty or all zeros) must never light the control.
 fn is_newer(release: &str, current: &str) -> bool {
-    parse_version(release) != parse_version(current)
+    let a = parse_version(release);
+    if a.iter().all(|&n| n == 0) {
+        return false;
+    }
+    a != parse_version(current)
 }
 
 /// Paths used by download and swap, both derived from the running exe.
