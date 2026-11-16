@@ -1,0 +1,11 @@
+# Build output
+/target
+
+# Local secrets (client ids for Google sign-in)
+.env
+
+# Editor / OS noise
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
