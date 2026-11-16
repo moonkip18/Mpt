@@ -51,8 +51,20 @@ fn snapshot(app: &MptApp) -> Snap {
 
 /// Entry point from `main`.
 pub fn home_screen(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui) {
+    let booted = app.shared.lock().unwrap().timer_booted;
     let actions = title_bar(ctx, ui, app.logo.as_ref(), true, app.is_mini);
     hairline(ui);
+
+    if !booted {
+        // Bootstrap (subjects + today's stats) takes a couple of seconds on
+        // the API. Hold the chrome with a quiet spinner instead of drawing an
+        // empty home; the settle fade covers the switch once data lands.
+        ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        let body = ui.available_rect_before_wrap();
+        spinner(ui, body.center(), 16.0, INK_FAINT);
+        actions.apply(app, ctx);
+        return;
+    }
 
     if !app.synced_on_entry {
         app.synced_on_entry = true;
@@ -164,7 +176,9 @@ fn header(ui: &mut Ui, inner: Rect, snap: &Snap) {
     let right = inner.max.x;
     let caps = ui.painter().layout_job(caps_job("TODAY", INK_FAINT));
     ui.painter().galley(
-        Pos2::new(right, inner.min.y + caps_lift(caps.size().y, 11.0)),
+        // Right-align to the column edge — a galley paints from its left
+        // edge, so positioning at `right` would push the label off-window.
+        Pos2::new(right - caps.size().x, inner.min.y + caps_lift(caps.size().y, 11.0)),
         caps,
         INK_FAINT,
     );
