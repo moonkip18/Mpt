@@ -37,7 +37,7 @@ jobs:
           $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($iscc) {
             $version = ((Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value)
-            & $iscc.FullName assets/installer.iss /DAppVersion=$version "/DSourceDir=$(Resolve-Path out)" | Out-Null
+            & $iscc.FullName assets/installer.iss /DAppVersion=$version "/DSourceDir=$(Resolve-Path out)"
             if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
             Move-Item "assets/Mpt-Setup-$version.exe" Mpt-Setup-$version.exe
           } else {
