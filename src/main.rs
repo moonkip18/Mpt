@@ -358,6 +358,16 @@ impl eframe::App for MptApp {
             self.is_mini = false;
             self.all_subjects_rect = None;
             self.synced_on_entry = false;
+            // Signing out must not throw away a live session: stop records it (or
+            // queues it offline), which needs a moment before the worker dies.
+            let live = {
+                let guard = self.shared.lock().unwrap();
+                guard.timer.is_running || guard.timer.is_resting
+            };
+            if live {
+                self.send_timer(TimerCmd::Stop);
+                std::thread::sleep(Duration::from_millis(250));
+            }
             self.shutdown_timer();
             let _ = self.auth_tx.send(AuthCmd::Logout);
         }

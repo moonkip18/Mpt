@@ -880,7 +880,8 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
         Vec2::splat(36.0),
     );
 
-    let play_enabled = !busy;
+    // Starting needs a subject; pausing and stopping always work.
+    let play_enabled = !busy && (running || resting || t.current_subject.is_some());
     let play_resp = ui.interact(play_rect, sid("mpt.mini.play"), Sense::click());
     if play_resp.hovered() && play_enabled {
         ui.painter().rect_filled(play_rect, 2.0, LINE);
