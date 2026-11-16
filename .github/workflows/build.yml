@@ -65,9 +65,10 @@ jobs:
             Mpt.exe
             Mpt-Setup-*.exe
           body: |
+            This is version 1.0 — the desktop client is complete. Everything before it was the build-up.
+
             Added:
-            - Subjects can be created right from the app: open the subject menu (›), "+ add subject" at the bottom, type a name, press Enter. It goes to YPT, picks a colour and selects itself.
-            - The update control stays out of the way now — it only appears when a newer release is actually out, checked quietly once at startup.
+            - Subjects can be created right in the app: subject menu (›), "+ add subject" at the bottom, type a name, Enter. It is created on YPT exactly like on your phone — same servers, same colour palette — so it shows up everywhere, and it works while a session is running.
 
             Fixed Bug:
-            - The "check for updates" button sat in the footer permanently even though it had nothing to say most of the time.
+            - "+ add subject" ignored clicks while a session was running and said nothing. Creating now works at any time; only selecting a different subject waits for the timer to stop.

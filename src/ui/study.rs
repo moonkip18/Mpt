@@ -520,7 +520,9 @@ fn all_subjects_menu(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, snap: &
                                     font(12.0, fonts::MONO),
                                     if resp.hovered() { INK } else { INK_FAINT },
                                 );
-                                if resp.clicked() && enabled {
+                                // Creating is allowed mid-session, like YPT;
+                                // selecting the new subject still waits for idle.
+                                if resp.clicked() {
                                     app.subject_creating = Some(String::new());
                                     app.subject_draft.clear();
                                 }
