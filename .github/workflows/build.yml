@@ -47,10 +47,5 @@ jobs:
           files: Mpt-windows-x64.zip
           body: |
             Fixed Bug:
-            - Start button was a blank white slab: the label colour was baked into the text layout and egui only recolours placeholder runs, so "Start" painted light-on-light. The label now overrides to the near-black ink and shows again (Segoe UI Semibold, like the original).
-            - Start button flashed black when clicked: pressing disabled it for a beat (dark surface with visible text); the original only brightens on hover, so the press darkening is gone.
-            - Text did not match the original client: section headers ("STUDY LOG", "TODAY", "TODAY BY SUBJECT", state label) now use the Segoe UI caps style with 1.6 letter spacing, the clock's subject line is Georgia italic, the wordmark and brand use the tracked semibold style, action buttons are semibold, and input text is 14 px plain ink with faint hints and a 1 px ink caret.
-            - Clock was oversized and labels sat low: clock 92 -> 86 px and the caps labels are baseline-lifted to the original's optical line.
-            - Small labels were too loud: "connected to YPT" is faint ink, mini-player subject sits on the original's baseline, selected row in the all-subjects menu is semibold.
-            - No "app is loaded" cue: a one-shot 300 ms opacity settle plays the first time real timer data arrives — no glow, no blur, no shadow, no new dependencies.
-            - Hover and bar animations keep one duration (0.12 s hover, 0.45 s bars) — the only smoothness change retained from the earlier feel layer.
+            - TODAY header sat at the wrong spot (it slipped off the window edge when the header gained letter spacing): it is right-aligned to the column edge again, above the day total.
+            - The first seconds after sign-in looked broken: the home screen drew empty while subjects and today's numbers were still loading from the API. The window now holds the title bar with a quiet spinner until the data lands, and the 300 ms settle fade covers the switch — no glow, no blur, no new dependencies.
