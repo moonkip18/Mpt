@@ -47,13 +47,10 @@ jobs:
           files: Mpt-windows-x64.zip
           body: |
             Fixed Bug:
-            - Every label rendered as [][][]: body text was routed to an unregistered font family; it now resolves through the registered system faces (Segoe UI / Georgia / Consolas).
-            - Missing-glyph boxes everywhere: Segoe UI Symbol now rides last in every font chain, so icons like ❐ ⧉ ⛶ ⓘ ⎋ ▶ ❚ 👁 🙈 render instead of tofu.
-            - Window buttons showed as identical empty squares: the original ❐ ✕ ⧉ ⛶ glyphs are back.
-            - App much slower than before: repaint cadence restored to 200 ms; the 60 ms focused / 16 ms loading per-frame pumps are gone.
-            - Hairline outline around the whole window: removed; hairlines are scoped to the screens again, resize hit-zones kept.
-            - Permanent border on every input field: the focus-only hairline is back.
-            - Preload fade / screen flash on login and screen switches: removed; screens draw at full opacity immediately.
-            - Eye toggle showed the words "show"/"hide": the original 👁 / 🙈 glyphs are back.
-            - Restyled notice marker, close button, subject-strip arrow and sign-out control: ⓘ, ✕, › and ⎋ restored.
-            - Hover and bar animations now share one duration (0.12 s hover, 0.45 s bars) — the only change kept from the feel layer.
+            - Start button was a blank white slab: the label colour was baked into the text layout and egui only recolours placeholder runs, so "Start" painted light-on-light. The label now overrides to the near-black ink and shows again (Segoe UI Semibold, like the original).
+            - Start button flashed black when clicked: pressing disabled it for a beat (dark surface with visible text); the original only brightens on hover, so the press darkening is gone.
+            - Text did not match the original client: section headers ("STUDY LOG", "TODAY", "TODAY BY SUBJECT", state label) now use the Segoe UI caps style with 1.6 letter spacing, the clock's subject line is Georgia italic, the wordmark and brand use the tracked semibold style, action buttons are semibold, and input text is 14 px plain ink with faint hints and a 1 px ink caret.
+            - Clock was oversized and labels sat low: clock 92 -> 86 px and the caps labels are baseline-lifted to the original's optical line.
+            - Small labels were too loud: "connected to YPT" is faint ink, mini-player subject sits on the original's baseline, selected row in the all-subjects menu is semibold.
+            - No "app is loaded" cue: a one-shot 300 ms opacity settle plays the first time real timer data arrives — no glow, no blur, no shadow, no new dependencies.
+            - Hover and bar animations keep one duration (0.12 s hover, 0.45 s bars) — the only smoothness change retained from the earlier feel layer.

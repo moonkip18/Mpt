@@ -15,7 +15,7 @@ use crate::timer::TimerCmd;
 use crate::utils::format::{format_clock, format_day_label, format_hm, format_hm_compact};
 use crate::MptApp;
 
-use super::{font, hairline, mix, spinner, title_bar};
+use super::{caps_job, caps_lift, font, hairline, mix, spinner, title_bar};
 
 const PANEL_WIDTH: f32 = 316.0;
 const CHIP_HEIGHT: f32 = 30.0;
@@ -147,11 +147,10 @@ fn study_column(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect, 
 fn header(ui: &mut Ui, inner: Rect, snap: &Snap) {
     let t = &snap.timer;
 
-    ui.painter().text(
-        Pos2::new(inner.min.x, inner.min.y),
-        Align2::LEFT_TOP,
-        "STUDY LOG",
-        font(11.0, fonts::UI),
+    let caps = ui.painter().layout_job(caps_job("STUDY LOG", INK_FAINT));
+    ui.painter().galley(
+        Pos2::new(inner.min.x, inner.min.y + caps_lift(caps.size().y, 11.0)),
+        caps,
         INK_FAINT,
     );
     ui.painter().text(
@@ -163,11 +162,10 @@ fn header(ui: &mut Ui, inner: Rect, snap: &Snap) {
     );
 
     let right = inner.max.x;
-    ui.painter().text(
-        Pos2::new(right, inner.min.y),
-        Align2::RIGHT_TOP,
-        "TODAY",
-        font(11.0, fonts::UI),
+    let caps = ui.painter().layout_job(caps_job("TODAY", INK_FAINT));
+    ui.painter().galley(
+        Pos2::new(right, inner.min.y + caps_lift(caps.size().y, 11.0)),
+        caps,
         INK_FAINT,
     );
     ui.painter().text(
@@ -214,7 +212,7 @@ fn clock_block(ui: &mut Ui, at: Pos2, width: f32, room: f32, snap: &Snap) {
         "READY"
     };
 
-    // 11 + 12 + 30 + 8 + 92 + a little breathing room.
+    // 11 + 12 + 30 + 8 + 86 + a little breathing room.
     let block_h = 152.0;
     let top = at.y + ((room - block_h) * 0.5).max(0.0);
 
@@ -224,11 +222,10 @@ fn clock_block(ui: &mut Ui, at: Pos2, width: f32, room: f32, snap: &Snap) {
             .circle_filled(Pos2::new(x + 2.5, top + 5.5), 2.5, ACCENT);
         x += 13.0;
     }
-    ui.painter().text(
-        Pos2::new(x, top),
-        Align2::LEFT_TOP,
-        state,
-        font(11.0, fonts::UI),
+    let state_galley = ui.painter().layout_job(caps_job(state, INK_FAINT));
+    ui.painter().galley(
+        Pos2::new(x, top + caps_lift(state_galley.size().y, 11.0)),
+        state_galley,
         INK_FAINT,
     );
 
@@ -239,7 +236,7 @@ fn clock_block(ui: &mut Ui, at: Pos2, width: f32, room: f32, snap: &Snap) {
         .unwrap_or("No subject");
     let galley = ui.painter().layout(
         subject.to_string(),
-        font(27.0, fonts::DISPLAY),
+        font(27.0, fonts::DISPLAY_ITALIC),
         INK,
         width,
     );
@@ -250,7 +247,7 @@ fn clock_block(ui: &mut Ui, at: Pos2, width: f32, room: f32, snap: &Snap) {
         Pos2::new(at.x, top + 58.0),
         Align2::LEFT_TOP,
         format_clock(t.session_elapsed_ms),
-        font(92.0, fonts::MONO),
+        font(86.0, fonts::MONO),
         if t.is_running { INK } else { INK_DIM },
     );
 }
@@ -423,7 +420,11 @@ fn all_subjects_menu(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, snap: &
                                     Pos2::new(row.min.x + 19.0, row.center().y),
                                     Align2::LEFT_CENTER,
                                     &subject.title,
-                                    font(12.5, fonts::UI),
+                                    if selected {
+                                        font(12.5, fonts::UI_STRONG)
+                                    } else {
+                                        font(12.5, fonts::UI)
+                                    },
                                     if selected { INK } else { INK_DIM },
                                 );
                                 let today = stats.ms_for(Some(subject.id), &subject.title);
@@ -526,24 +527,21 @@ fn action_button(
 ) -> bool {
     let galley = ui
         .painter()
-        .layout_no_wrap(label.to_string(), font(13.0, fonts::UI), INK);
+        .layout_no_wrap(label.to_string(), font(13.0, fonts::UI_STRONG), INK);
     let width = (galley.size().x + 52.0).max(96.0);
     let rect = Rect::from_min_size(Pos2::new(*x, y), Vec2::new(width, BUTTON_HEIGHT));
     let resp = ui.interact(rect, sid(("mpt.action", id)), Sense::click());
     let h = ui
         .ctx()
         .animate_bool_with_time(sid(("mpt.action.hover", id)), resp.hovered() && enabled, 0.12);
-    let down = resp.is_pointer_button_down_on() && enabled;
 
     let (bg, fg, border) = if !enabled {
         (SURFACE, INK_FAINT, None)
     } else {
         match kind {
-            ButtonKind::Primary => (
-                mix(SYNAPSE, Color32::WHITE, if down { 0.9 } else { h * 0.45 }),
-                BACKGROUND,
-                None,
-            ),
+            // The original only brightens on hover; no extra darkening while
+            // the pointer is down.
+            ButtonKind::Primary => (mix(SYNAPSE, Color32::WHITE, h), BACKGROUND, None),
             ButtonKind::Accent => (
                 mix(Color32::TRANSPARENT, ACCENT, h),
                 mix(ACCENT, INK, h),
@@ -562,7 +560,9 @@ fn action_button(
         ui.painter()
             .rect_stroke(rect, 2.0, Stroke::new(1.0, border), StrokeKind::Inside);
     }
-    ui.painter().galley(
+    // galley() only colours PLACEHOLDER runs — the ink baked in above would
+    // win and leave a light label on the light primary slab. Override.
+    ui.painter().galley_with_override_text_color(
         Pos2::new(
             rect.center().x - galley.size().x / 2.0,
             rect.center().y - galley.size().y / 2.0,
@@ -625,15 +625,16 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
     let idle = !snap.timer.is_running && !snap.timer.is_resting;
     let current_id = snap.timer.current_subject.as_ref().map(|s| s.id);
 
-    ui.painter().text(
-        inner.min,
-        Align2::LEFT_TOP,
-        "TODAY BY SUBJECT",
-        font(11.0, fonts::UI),
+    let caps = ui
+        .painter()
+        .layout_job(caps_job("TODAY BY SUBJECT", INK_FAINT));
+    ui.painter().galley(
+        Pos2::new(inner.min.x, inner.min.y + caps_lift(caps.size().y, 11.0)),
+        caps,
         INK_FAINT,
     );
     ui.painter().text(
-        Pos2::new(inner.max.x, inner.min.y),
+        Pos2::new(inner.max.x, inner.min.y + 1.0),
         Align2::RIGHT_TOP,
         format_hm_compact(stats.total_ms),
         font(11.0, fonts::MONO),
@@ -859,7 +860,7 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
         x += 9.0;
     }
     ui.painter().text(
-        Pos2::new(x, inner.min.y),
+        Pos2::new(x, inner.min.y + 1.0),
         Align2::LEFT_TOP,
         t.current_subject
             .as_ref()

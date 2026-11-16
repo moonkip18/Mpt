@@ -10,7 +10,7 @@ use egui::text::LayoutJob;
 
 use crate::auth::AuthCmd;
 use crate::theme::colors::*;
-use crate::theme::{fonts, named};
+use crate::theme::{fonts, named, tracked_job};
 use crate::MptApp;
 
 const ICON_MINIMIZE: &str = "–";
@@ -29,6 +29,18 @@ fn sid(name: impl std::hash::Hash + std::fmt::Debug) -> Id {
 
 pub fn font(size: f32, family: &str) -> egui::FontId {
     egui::FontId::new(size, named(family))
+}
+
+/// Caps label the way the original sets it: Segoe UI with 1.6 tracking
+/// (`MptText.section`). Letter spacing lives on the layout job, not the face.
+pub fn caps_job(text: &str, color: Color32) -> LayoutJob {
+    crate::theme::tracked_job(text, font(11.0, fonts::UI), color, 1.6)
+}
+
+/// egui lays a galley's glyphs one em below the top of its rect, which sits
+/// small caps visually low next to painter-drawn baselines; lift a touch.
+pub fn caps_lift(galley_height: f32, font_size: f32) -> f32 {
+    (galley_height - font_size) * 0.5
 }
 
 pub fn hairline(ui: &mut Ui) {
@@ -152,11 +164,12 @@ pub fn title_bar(
         );
         x += 17.0 + 10.0;
     }
-    ui.painter().text(
-        Pos2::new(x, bar.center().y),
-        Align2::LEFT_CENTER,
-        "MPT",
-        font(11.0, fonts::UI),
+    let brand = ui
+        .painter()
+        .layout_job(tracked_job("MPT", font(11.0, fonts::UI_STRONG), INK_DIM, 3.0));
+    ui.painter().galley(
+        Pos2::new(x, bar.center().y - brand.size().y / 2.0),
+        brand,
         INK_DIM,
     );
 
@@ -227,6 +240,24 @@ pub fn login_screen(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui) {
     actions.apply(app, ctx);
 }
 
+/// One 300 ms settle after the timer data first arrives: the study screen fades
+/// from 0 to full opacity exactly once, so "the app is loaded now" reads without
+/// any decoration. Cheap — opacity is one multiply in the tessellator.
+pub fn loaded_settle(loaded_at: &Option<std::time::Instant>, ui: &mut Ui) {
+    let Some(loaded_at) = loaded_at else {
+        // Data not in yet: draw the frame anyway (boot screen state never
+        // reaches here), just fully settled once the stamp exists.
+        return;
+    };
+    let since = loaded_at.elapsed().as_secs_f32();
+    let opacity = ((since / 0.3).min(1.0) * 10.0).round() / 10.0;
+    ui.set_opacity(opacity);
+    if opacity < 1.0 {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(16));
+    }
+}
+
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     mix(a, b, t)
 }
@@ -290,11 +321,14 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
                 )));
             }
             ui.add_space(10.0);
-            ui.label(
-                egui::RichText::new("MPT")
-                    .font(font(11.0, fonts::UI))
-                    .color(INK_DIM),
-            );
+            let brand = ui.painter().layout_job(tracked_job(
+                "MPT",
+                font(11.0, fonts::UI_STRONG),
+                INK_DIM,
+                3.0,
+            ));
+            let (rect, _) = ui.allocate_exact_size(brand.size(), Sense::hover());
+            ui.painter().galley(rect.min, brand, INK_DIM);
         });
     });
 
@@ -415,7 +449,7 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
             btn_rect.center(),
             Align2::CENTER_CENTER,
             "Sign in",
-            font(13.0, fonts::UI),
+            font(13.0, fonts::UI_STRONG),
             BACKGROUND,
         );
     }
@@ -471,6 +505,7 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
 }
 
 /// A 46 px single-line field: filled surface, hairline border, 3 px radius.
+/// Type at 14 px in the plain ink with a faint hint, like the Flutter field.
 fn put_field(
     ui: &mut Ui,
     rect: Rect,
@@ -490,6 +525,8 @@ fn put_field(
         .hint_text(hint)
         .password(password)
         .frame(frame)
+        .font(egui::FontSelection::FontId(font(14.0, fonts::UI)))
+        .text_color(INK)
         .desired_width(f32::INFINITY);
     if !enabled {
         edit = edit.lock_focus(true);

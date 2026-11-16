@@ -97,6 +97,9 @@ pub struct MptApp {
     background: background::Background,
     /// The window has been placed once (eframe does not centre on its own).
     positioned: bool,
+    /// When the timer thread first reported real data; drives the one-shot
+    /// 300 ms settle that marks "the app is loaded". None until then.
+    pub(crate) loaded_at: Option<Instant>,
 }
 
 /// Everything the timer thread needs, parked until authentication happens.
@@ -167,6 +170,7 @@ impl MptApp {
             focused: true,
             background: background::Background::new(),
             positioned: false,
+            loaded_at: None,
         }
     }
 
@@ -372,6 +376,12 @@ impl eframe::App for MptApp {
         if authenticated {
             // First frame after sign-in bootstraps the timer thread.
             let _ = self.ensure_timer_thread();
+            // Stamp the loaded moment once the timer thread has answered with
+            // real state — that is the frame the settle should start from.
+            let booted = self.shared.lock().unwrap().timer_booted;
+            if booted && self.loaded_at.is_none() {
+                self.loaded_at = Some(Instant::now());
+            }
         } else {
             self.is_mini = false;
         }
@@ -388,6 +398,7 @@ impl eframe::App for MptApp {
                         ui::login_screen(self, &ctx, ui);
                     }
                 } else {
+                    ui::loaded_settle(&self.loaded_at, ui);
                     ui::study::home_screen(self, &ctx, ui);
                 }
             });

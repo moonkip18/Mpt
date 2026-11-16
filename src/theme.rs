@@ -42,7 +42,11 @@ pub mod colors {
 
 pub mod fonts {
     pub const UI: &str = "Segoe UI";
+    /// Segoe UI Semibold: stands in for Flutter's `FontWeight.w600`.
+    pub const UI_STRONG: &str = "Segoe UI Semibold";
     pub const DISPLAY: &str = "Georgia";
+    /// Georgia Italic: the clock's subject line is italic in the original.
+    pub const DISPLAY_ITALIC: &str = "Georgia Italic";
     pub const MONO: &str = "Consolas";
 }
 
@@ -116,8 +120,13 @@ pub fn apply(ctx: &egui::Context) {
     style.visuals.widgets.active.fg_stroke = Stroke::new(1.0, INK);
     style.spacing.scroll.bar_width = 6.0;
     style.spacing.scroll.floating = false;
-    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    // Flutter's default vertical gap between widgets is 4.
+    style.spacing.item_spacing = egui::vec2(8.0, 4.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
+    // Inputs: a hairline ink caret and hint text in the faint ink, like the
+    // Flutter `TextField` (cursorWidth 1, hintStyle inkFaint).
+    style.visuals.text_cursor.stroke = Stroke::new(1.0, INK);
+    style.visuals.weak_text_color = Some(INK_FAINT);
 
     let _ = ctx.set_style_of(egui::Theme::Dark, style.clone());
     ctx.set_style_of(egui::Theme::Light, style);
@@ -131,10 +140,12 @@ pub fn apply(ctx: &egui::Context) {
 fn system_fonts() -> egui::FontDefinitions {
     let mut defs = egui::FontDefinitions::default();
 
-    let candidates: [(&str, &[&str]); 4] = [
+    let candidates: [(&str, &[&str]); 6] = [
         (fonts::UI, &["segoeui.ttf", "seguisb.ttf"]),
+        (fonts::UI_STRONG, &["seguisb.ttf"]),
         (fonts::DISPLAY, &["georgia.ttf", "georgiai.ttf"]),
-        (fonts::MONO, &["consola.ttf"]),
+        (fonts::DISPLAY_ITALIC, &["georgiai.ttf"]),
+        (fonts::MONO, &["consola.ttf", "consolal.ttf"]),
         ("Segoe UI Symbol", &["seguisym.ttf"]),
     ];
 
@@ -221,5 +232,19 @@ pub fn styled_job(text: String, font: FontId, color: Color32) -> LayoutJob {
             ..Default::default()
         },
     });
+    job
+}
+
+/// A one-run text job with letter spacing, standing in for Flutter's
+/// `letterSpacing` on the styles that carry it (caps labels, the wordmark).
+pub fn tracked_job(
+    text: impl Into<String>,
+    font_id: FontId,
+    color: Color32,
+    tracking: f32,
+) -> LayoutJob {
+    let text = text.into();
+    let mut job = styled_job(text, font_id, color);
+    job.sections[0].format.extra_letter_spacing = tracking;
     job
 }
