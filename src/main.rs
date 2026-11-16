@@ -107,6 +107,8 @@ pub struct MptApp {
     /// the input row is open.
     pub(crate) subject_creating: Option<String>,
     pub(crate) subject_draft: String,
+    /// YPT day-reset hour, copied for the UI's offline stats math.
+    pub(crate) day_reset_hour: i64,
 }
 
 /// Everything the timer thread needs, parked until authentication happens.
@@ -186,6 +188,7 @@ impl MptApp {
             update,
             subject_creating: None,
             subject_draft: String::new(),
+            day_reset_hour: SettingsState::from_store(&store.lock().unwrap()).day_reset_hour,
         }
     }
     /// Send a command to the timer thread, spawning it on first use.

@@ -143,6 +143,14 @@ impl OfflineSyncRepository {
         store.flush();
     }
 
+    /// Cheap authenticated probe used to end offline mode automatically:
+    /// success means the internet (and YPT) is reachable again.
+    pub fn ping(&self) -> bool {
+        self.timer_repository
+            .fetch_daily_log_dl(None)
+            .is_ok()
+    }
+
     fn persist(&self, sessions: &[OfflineSessionModel]) {
         let Ok(mut store) = self.store.lock() else { return; };
         let encoded: Vec<String> = sessions

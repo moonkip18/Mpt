@@ -214,10 +214,13 @@ impl TimerController {
         if title.is_empty() {
             return;
         }
-        // A non-empty sync queue means the last network calls failed; creating
-        // would just pile another failed request onto it.
-        if self.shared.lock().unwrap().offline.has_pending() {
-            self.with_state(|t| t.notice = Some("You look offline — the subject needs a connection.".into()));
+        // A subject must exist on YPT (the phone reads the same list), so
+        // creation is skipped entirely while offline — there is no honest
+        // local fallback for it.
+        if self.shared.lock().unwrap().offline.wants_offline() {
+            self.with_state(|t| {
+                t.notice = Some("Subjects need the internet. Turn off offline mode, then add it.".into())
+            });
             return;
         }
         let colors = crate::utils::color::DEFAULT_SUBJECT_COLORS;
@@ -290,6 +293,10 @@ impl TimerController {
     // ----------------------------------------------------------------- stats
 
     fn refresh_stats(&self) {
+        // Offline mode keeps local numbers; nothing to poll for.
+        if self.shared.lock().unwrap().offline.wants_offline() {
+            return;
+        }
         let date = self.study_date();
         let dl = match self.deps.timer.fetch_daily_log_dl(None) {
             Ok(dl) => dl,
@@ -308,6 +315,9 @@ impl TimerController {
     /// Detects an open session started on another device so the UI can say so.
     /// Read-only on purpose: mirroring a remote session would double count.
     fn probe_remote_activity(&self) {
+        if self.shared.lock().unwrap().offline.wants_offline() {
+            return;
+        }
         let Ok(Some(dl)) = self.deps.timer.fetch_daily_log_dl(None) else { return; };
         let Some(sessions) = dl.get("ls").and_then(Value::as_array) else { return; };
         let Some(last) = sessions.last() else { return; };
@@ -456,15 +466,22 @@ impl TimerController {
             (subject.title, subject.id)
         };
 
-        // Mirrors `.timeout(8s, onTimeout: (ok:false, message:null))`: a timeout
-        // yields no notice, an explicit refusal surfaces the server message.
-        let failure: Option<String> = match self
-            .deps
-            .timer
-            .start_study(&subject_title, subject_id, now)
-        {
-            TimerStartResult { ok: true, .. } => None,
-            TimerStartResult { ok: false, message } => message,
+        // Offline mode (or a pending queue) skips the API entirely: the clock
+        // starts locally and the stop is queued with its real times. Otherwise
+        // mirrors `.timeout(8s, onTimeout: (ok:false, message:null))`: a
+        // timeout yields no notice, an explicit refusal surfaces the message.
+        let offline = self.shared.lock().unwrap().offline.wants_offline();
+        let failure: Option<String> = if offline {
+            None
+        } else {
+            match self
+                .deps
+                .timer
+                .start_study(&subject_title, subject_id, now)
+            {
+                TimerStartResult { ok: true, .. } => None,
+                TimerStartResult { ok: false, message } => message,
+            }
         };
 
         let mut guard = self.shared.lock().unwrap();
@@ -592,6 +609,23 @@ impl TimerController {
             (start, elapsed, segment_ms, subject)
         };
         if segment_ms <= 0 {
+            return;
+        }
+
+        // Offline mode: nothing leaves the device. The stop goes into the
+        // queue with its real timestamps; the replay sends it (and any older
+        // queued days) once the internet is back.
+        if self.shared.lock().unwrap().offline.wants_offline() {
+            let stop_at = start + chrono::Duration::milliseconds(segment_ms);
+            self.deps.offline.enqueue_session(
+                subject.id,
+                &subject.title,
+                start,
+                stop_at,
+                segment_ms,
+            );
+            let mut guard = self.shared.lock().unwrap();
+            guard.timer.last_synced_ms = elapsed;
             return;
         }
 

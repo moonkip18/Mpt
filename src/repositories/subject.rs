@@ -357,4 +357,8 @@ impl SubjectsApi for SubjectRepository {
     ) -> SubjectFetchResult {
         SubjectRepository::fetch_subjects_data(self, language, timezone, version)
     }
+
+    fn create_subject(&self, title: &str, color_int: i64) -> Result<SubjectModel, ApiError> {
+        SubjectRepository::create_subject(self, title, color_int)
+    }
 }

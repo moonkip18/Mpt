@@ -706,7 +706,42 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
         Pos2::new(rect.min.x + 20.0, rect.min.y + 26.0),
         Pos2::new(rect.max.x - 20.0, rect.max.y - 18.0),
     );
-    let stats = snap.timer.display_stats();
+    // In offline mode the queued sessions are not on the server yet, so the
+    // day's numbers are built locally: server stats, then every queued stop
+    // folded into its own subject row, then the live clock. Palette colours
+    // match rows; sessions from earlier days stay out of today's total
+    // because they are keyed by their own study date below.
+    let stats = if snap.offline.wants_offline() {
+        let today = snap.timer.stats.date.clone();
+        let mut grouped: Vec<(i64, String, i64)> = Vec::new();
+        for s in &snap.offline.pending_sessions {
+            let date = crate::utils::study_date::get_study_date_string(
+                chrono::DateTime::from_timestamp_millis(s.start_at)
+                    .map(|d| d.with_timezone(&chrono::Local))
+                    .unwrap_or_else(chrono::Local::now),
+                app.day_reset_hour as u32,
+            );
+            if date != today {
+                continue;
+            }
+            if let Some(g) = grouped.iter_mut().find(|g| g.0 == s.subject_id) {
+                g.2 += s.study_ms;
+            } else {
+                grouped.push((s.subject_id, s.subject_title.clone(), s.study_ms));
+            }
+        }
+        let mut stats = snap.timer.stats.clone();
+        for (id, title, ms) in &grouped {
+            stats = stats.with_live_delta(Some(*id), Some(title.as_str()), *ms);
+        }
+        stats.with_live_delta(
+            snap.timer.current_subject.as_ref().map(|s| s.id),
+            snap.timer.current_subject.as_ref().map(|s| s.title.as_str()),
+            snap.timer.live_delta_ms(),
+        )
+    } else {
+        snap.timer.display_stats()
+    };
     let idle = !snap.timer.is_running && !snap.timer.is_resting;
     let current_id = snap.timer.current_subject.as_ref().map(|s| s.id);
 
@@ -728,7 +763,7 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
 
     // Reserve the footer and the offline strip before the list gets its height.
     let footer_h = 52.0;
-    let offline_h = if snap.offline.has_pending() { 44.0 } else { 0.0 };
+    let offline_h = if snap.offline.wants_offline() { 27.0 } else { 0.0 };
     let list = Rect::from_min_max(
         Pos2::new(inner.min.x, inner.min.y + 18.0),
         Pos2::new(inner.max.x, inner.max.y - footer_h - offline_h),
@@ -834,44 +869,60 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
     }
 
     let mut y = list.max.y;
-    if snap.offline.has_pending() {
+
+    // Offline strip: one small line. Hidden entirely when online and empty;
+    // shows queue depth when it exists; clicking it enters or leaves
+    // offline mode. Not a banner — part of the layout's quiet furniture.
+    if snap.offline.wants_offline() {
         ui.painter().rect_filled(
             Rect::from_min_max(Pos2::new(inner.min.x, y), Pos2::new(inner.max.x, y + 1.0)),
             0.0,
             LINE,
         );
-        y += 13.0;
+        y += 7.0;
+        let strip_rect = Rect::from_min_max(
+            Pos2::new(inner.min.x, y - 2.0),
+            Pos2::new(inner.max.x, y + 16.0),
+        );
         let count = snap.offline.pending_count();
-        ui.painter().text(
-            Pos2::new(inner.min.x, y),
-            Align2::LEFT_TOP,
-            format!("{count} session{} offline", if count == 1 { "" } else { "s" }),
-            font(11.0, fonts::MONO),
-            ACCENT,
-        );
-        let sync_rect = Rect::from_min_size(
-            Pos2::new(inner.max.x - 58.0, y - 2.0),
-            Vec2::new(58.0, 16.0),
-        );
-        let resp = ui.interact(sync_rect, sid("mpt.sync_now"), Sense::click());
+        let mode = snap.offline.offline_mode;
         let label = if snap.offline.is_syncing {
-            "syncing…"
+            "syncing saved sessions…".to_string()
+        } else if count > 0 {
+            let unit = if count == 1 { "session" } else { "sessions" };
+            if mode {
+                format!("offline mode · {count} {unit} saved")
+            } else {
+                format!("{count} {unit} waiting to sync")
+            }
         } else {
-            "sync now"
+            "offline mode".to_string()
         };
+        let resp = ui.interact(strip_rect, sid("mpt.offline.strip"), Sense::click());
+        if resp.hovered() {
+            ui.painter()
+                .rect_filled(strip_rect, 2.0, mix(Color32::TRANSPARENT, SURFACE, 1.0));
+        }
+        // The dot is accent-coloured in offline mode (an intentional choice),
+        // faint when only the queue is left from a dropped connection.
+        let dot = if mode { ACCENT } else { INK_FAINT };
+        ui.painter().circle_filled(Pos2::new(inner.min.x + 4.0, y + 5.0), 2.0, dot);
+        ui.painter().text(
+            Pos2::new(inner.min.x + 13.0, y),
+            Align2::LEFT_TOP,
+            label,
+            font(11.0, fonts::MONO),
+            if mode { INK } else { INK_FAINT },
+        );
         ui.painter().text(
             Pos2::new(inner.max.x, y),
             Align2::RIGHT_TOP,
-            label,
+            if mode { "turn off" } else { "turn on" },
             font(11.0, fonts::MONO),
-            if resp.hovered() && !snap.offline.is_syncing {
-                Color32::WHITE
-            } else {
-                INK
-            },
+            if resp.hovered() { INK } else { INK_FAINT },
         );
-        if resp.clicked() && !snap.offline.is_syncing {
-            let _ = app.offline_tx.send(OfflineCmd::SyncNow);
+        if resp.clicked() {
+            let _ = app.offline_tx.send(OfflineCmd::SetOffline(!mode));
         }
     }
 
@@ -895,7 +946,11 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
     ui.painter().text(
         Pos2::new(inner.min.x, footer_top + 30.0),
         Align2::LEFT_TOP,
-        "connected to YPT",
+        if snap.offline.offline_mode {
+            "offline mode"
+        } else {
+            "connected to YPT"
+        },
         font(11.0, fonts::MONO),
         INK_FAINT,
     );
@@ -1086,6 +1141,16 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
 
     // Starting needs a subject; pausing and stopping always work.
     let play_enabled = !busy && (running || resting || t.current_subject.is_some());
+
+    // Offline hint: a tiny dot beside the subject name, no layout shift.
+    if snap.offline.offline_mode {
+        ui.painter().circle_filled(
+            Pos2::new(text_x - 6.0, block_top + subject_galley.size().y * 0.5),
+            2.0,
+            ACCENT,
+        );
+    }
+
     let play_resp = ui.interact(play_rect, sid("mpt.mini.play"), Sense::click());
     if play_resp.hovered() && play_enabled {
         ui.painter().rect_filled(play_rect, 2.0, LINE);

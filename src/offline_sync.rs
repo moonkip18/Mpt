@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, Instant};
 
 use crate::localization::tr_msg;
 use crate::repositories::offline_sync::{OfflineSyncRepository, SyncResult};
@@ -19,8 +19,17 @@ pub enum OfflineCmd {
         study_ms: i64,
     },
     SyncNow,
+    /// User toggled offline mode from the strip.
+    SetOffline(bool),
+    /// Periodic: while offline, try the API and auto-exit the mode when the
+    /// net is back, then replay the queue (previous days included).
+    Probe,
     Shutdown,
 }
+
+/// How often the offline thread retries the API while offline. On success
+/// the mode ends by itself and queued sessions go up.
+const PROBE_INTERVAL: StdDuration = StdDuration::from_secs(30);
 
 pub fn spawn_offline_thread(
     shared: Arc<Mutex<Shared>>,
@@ -48,22 +57,77 @@ impl OfflineController {
     }
 
     fn run(&mut self, rx: Receiver<OfflineCmd>) {
-        while let Ok(cmd) = rx.recv() {
-            match cmd {
-                OfflineCmd::Shutdown => break,
-                OfflineCmd::LoadPending => self.load_pending(),
-                OfflineCmd::Enqueue { subject_id, subject_title, start_at, stop_at, study_ms } => {
-                    let start = chrono::DateTime::from_timestamp_millis(start_at)
-                        .map(|d| d.with_timezone(&chrono::Local))
-                        .unwrap_or_else(chrono::Local::now);
-                    let stop = chrono::DateTime::from_timestamp_millis(stop_at)
-                        .map(|d| d.with_timezone(&chrono::Local))
-                        .unwrap_or_else(chrono::Local::now);
-                    self.repo.enqueue_session(subject_id, &subject_title, start, stop, study_ms);
-                    self.load_pending();
-                }
-                OfflineCmd::SyncNow => self.sync_now(),
+        let mut next_probe = Instant::now() + PROBE_INTERVAL;
+        loop {
+            match rx.recv_timeout(PROBE_INTERVAL) {
+                Ok(OfflineCmd::Shutdown) => break,
+                Ok(cmd) => match cmd {
+                    OfflineCmd::Shutdown => break,
+                    OfflineCmd::LoadPending => self.load_pending(),
+                    OfflineCmd::Enqueue { subject_id, subject_title, start_at, stop_at, study_ms } => {
+                        let start = chrono::DateTime::from_timestamp_millis(start_at)
+                            .map(|d| d.with_timezone(&chrono::Local))
+                            .unwrap_or_else(chrono::Local::now);
+                        let stop = chrono::DateTime::from_timestamp_millis(stop_at)
+                            .map(|d| d.with_timezone(&chrono::Local))
+                            .unwrap_or_else(chrono::Local::now);
+                        self.repo.enqueue_session(subject_id, &subject_title, start, stop, study_ms);
+                        self.load_pending();
+                    }
+                    OfflineCmd::SyncNow => self.sync_now(),
+                    OfflineCmd::SetOffline(on) => self.set_offline(on),
+                    OfflineCmd::Probe => self.probe(),
+                },
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            if self.shared.lock().unwrap().offline.offline_mode && Instant::now() >= next_probe {
+                self.probe();
+                next_probe = Instant::now() + PROBE_INTERVAL;
+            }
+        }
+    }
+
+    fn set_offline(&self, on: bool) {
+        {
+            let mut guard = self.shared.lock().unwrap();
+            guard.offline.offline_mode = on;
+            if on {
+                guard.offline.last_sync_message = None;
+            }
+        }
+        if on {
+            self.with_timer_state(|t| {
+                t.notice = Some("Offline mode on — sessions are saved here and sent to YPT when the internet returns.".into());
+            });
+        } else {
+            self.with_timer_state(|t| {
+                t.notice = Some("Back online — sending saved sessions to YPT.".into());
+            });
+            self.sync_now();
+            self.load_pending();
+        }
+    }
+
+    fn with_timer_state<F: FnOnce(&mut crate::state::TimerState)>(&self, f: F) {
+        let mut guard = self.shared.lock().unwrap();
+        f(&mut guard.timer);
+    }
+
+    /// One cheap authenticated call. Success means the net is back: drop the
+    /// inferred mode, replay the queue, refresh what the server knows.
+    fn probe(&self) {
+        if !self.repo.ping() {
+            return;
+        }
+        let was_user_mode = self.shared.lock().unwrap().offline.offline_mode;
+        if was_user_mode {
+            let mut guard = self.shared.lock().unwrap();
+            guard.offline.offline_mode = false;
+        }
+        self.load_pending();
+        if self.shared.lock().unwrap().offline.has_pending() {
+            self.sync_now();
         }
     }
 

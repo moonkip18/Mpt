@@ -45,16 +45,11 @@ fn parse_version(s: &str) -> Vec<u64> {
         .collect()
 }
 
+/// True when the published release is not exactly this build. The version
+/// line is now a simple counter (0.1 … 0.9, then 1.0), so "different" is
+/// the right test — a rebuild can go down as well as up.
 fn is_newer(release: &str, current: &str) -> bool {
-    let a = parse_version(release);
-    let b = parse_version(current);
-    for i in 0..a.len().max(b.len()) {
-        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
-        if x != y {
-            return x > y;
-        }
-    }
-    false
+    parse_version(release) != parse_version(current)
 }
 
 /// Paths used by download and swap, both derived from the running exe.
@@ -243,11 +238,10 @@ mod tests {
 
     #[test]
     fn version_comparison() {
-        assert!(is_newer("v1.0.7", "1.0.6"));
-        assert!(is_newer("1.1.0", "1.0.99"));
-        assert!(is_newer("v2.0", "1.9.9"));
-        assert!(!is_newer("v1.0.6", "1.0.6"));
-        assert!(!is_newer("v1.0.5", "1.0.6"));
-        assert!(!is_newer("", "1.0.6"));
+        assert!(is_newer("v1.0.0", "0.9"));
+        assert!(is_newer("0.5", "0.4"));
+        assert!(!is_newer("v1.0.0", "1.0"));
+        assert!(!is_newer("1.0", "v1.0.0"));
+        assert!(!is_newer("", "1.0"));
     }
 }

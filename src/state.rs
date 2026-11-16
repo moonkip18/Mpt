@@ -118,6 +118,9 @@ pub struct OfflineSyncState {
     pub pending_sessions: Vec<OfflineSessionModel>,
     pub is_syncing: bool,
     pub last_sync_message: Option<String>,
+    /// Explicit or inferred offline mode: timer runs locally, stops are
+    /// queued, and nothing else touches the API until the net returns.
+    pub offline_mode: bool,
 }
 
 impl OfflineSyncState {
@@ -127,6 +130,12 @@ impl OfflineSyncState {
 
     pub fn has_pending(&self) -> bool {
         !self.pending_sessions.is_empty()
+    }
+
+    /// Offline mode is on, or a sync queue exists (auto-entered when the
+    /// network died mid-session). Both keep the app from calling the API.
+    pub fn wants_offline(&self) -> bool {
+        self.offline_mode || self.has_pending()
     }
 }
 
