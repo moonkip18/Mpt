@@ -81,8 +81,12 @@ fn full_body(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, snap: &Snap) {
         return;
     }
 
-    // The panel is fixed; the study column takes whatever is left.
-    let panel_width = PANEL_WIDTH.min((body.width() * 0.42).max(240.0));
+    // The panel is fixed; the study column takes whatever is left. Keep the
+    // panel from ever stealing the column, even at odd window sizes.
+    let panel_width = PANEL_WIDTH
+        .min((body.width() * 0.42).max(240.0))
+        .max(220.0)
+        .min((body.width() - 320.0).max(220.0));
     let split = body.max.x - panel_width;
 
     ui.painter().rect_filled(

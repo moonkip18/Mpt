@@ -51,7 +51,10 @@ path of least resistance; `cargo check` is enough if you only want to confirm th
 code compiles.
 
 CI builds every push and attaches the zip to tagged releases, so you do not need
-a local toolchain to get a binary — see `.github/workflows/build.yml`.
+a local toolchain to get a binary — see `.github/workflows/build.yml`. Every run
+keeps the zip under *Actions → build → Artifacts*; if you want the release page
+as well, set *Settings → Actions → General → Workflow permissions* to
+**Read and write permissions**, then push a `v*` tag.
 
 ## How the hours stay honest
 
