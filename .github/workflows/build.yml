@@ -68,7 +68,9 @@ jobs:
             This is version 1.0 — the desktop client is complete. Everything before it was the build-up.
 
             Added:
+            - Offline mode. When the internet drops (or you turn it on from the small line under the list), the timer keeps running without calling YPT. Stops are saved with their real times and everything goes up automatically the moment the connection is back — sessions from previous days included.
             - Subjects can be created right in the app: subject menu (›), "+ add subject" at the bottom, type a name, Enter. It is created on YPT exactly like on your phone — same servers, same colour palette — so it shows up everywhere, and it works while a session is running.
 
             Fixed Bug:
             - "+ add subject" ignored clicks while a session was running and said nothing. Creating now works at any time; only selecting a different subject waits for the timer to stop.
+            - The internal subject-creation path could crash the timer thread instead of showing an error.
