@@ -302,6 +302,16 @@ impl MptApp {
 }
 
 fn load_logo(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    let (width, height, rgba) = decode_logo_rgba()?;
+    let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba);
+    Some(ctx.load_texture("logo", color_image, egui::TextureOptions::LINEAR))
+}
+
+/// Decode the embedded mark into straight RGBA. `IconData` and `ColorImage`
+/// both need 4 bytes per pixel, but the source PNG is RGB (color type 2) —
+/// feeding a 3-byte buffer to the window icon leaves alt-tab and the taskbar
+/// with a garbled, effectively blank icon.
+fn decode_logo_rgba() -> Option<(usize, usize, Vec<u8>)> {
     // Embedded so the exe is a single file, wherever it is run from.
     let bytes: &[u8] = include_bytes!("../assets/images/logo.png");
     let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
@@ -319,8 +329,7 @@ fn load_logo(ctx: &egui::Context) -> Option<egui::TextureHandle> {
             .collect(),
         png::ColorType::Indexed => return None,
     };
-    let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba);
-    Some(ctx.load_texture("logo", color_image, egui::TextureOptions::LINEAR))
+    Some((width, height, rgba))
 }
 
 impl eframe::App for MptApp {
@@ -480,15 +489,10 @@ fn install_panic_log() {
 
 /// Taskbar / alt-tab icon, from the same PNG the title bar draws.
 fn window_icon() -> Option<egui::IconData> {
-    let bytes: &[u8] = include_bytes!("../assets/images/logo.png");
-    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
-    let mut reader = decoder.read_info().ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).ok()?;
-    buf.truncate(info.buffer_size());
+    let (width, height, rgba) = decode_logo_rgba()?;
     Some(egui::IconData {
-        rgba: buf,
-        width: info.width,
-        height: info.height,
+        rgba,
+        width: width as u32,
+        height: height as u32,
     })
 }

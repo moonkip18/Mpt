@@ -47,4 +47,4 @@ jobs:
           files: Mpt-windows-x64.zip
           body: |
             Fixed Bug:
-            - Mini player looked out of place: the subject and clock were pinned to the top of the window instead of centred, the clock had no tracking, and long subjects overflowed the action buttons. The text column is now vertically centred like the original, the clock carries the original's tight spacing, long subject names ellipsize, the live dot sits on the subject line, and the play/stop buttons are centred with it.
+            - No icon in alt-tab or on the taskbar: the window icon was fed the logo PNG's raw 3-bytes-per-pixel RGB data labelled as RGBA, so the system icon came out garbled and blank. The mark is now decoded to real RGBA once and shared by the title bar and the window icon.
