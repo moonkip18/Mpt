@@ -9,6 +9,9 @@
 // purpose: it is the part of the app that talks to the service.
 #![allow(dead_code)]
 
+// No console window behind the app when double-clicked from Explorer.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod api;
 mod auth;
 mod background;
@@ -94,6 +97,9 @@ pub struct MptApp {
     background: background::Background,
     /// The window has been placed once (eframe does not centre on its own).
     positioned: bool,
+    /// 0 = sign-in, 1 = study. Changing it restarts the fade.
+    screen: i8,
+    shown_at: Instant,
 }
 
 /// Everything the timer thread needs, parked until authentication happens.
@@ -164,6 +170,8 @@ impl MptApp {
             focused: true,
             background: background::Background::new(),
             positioned: false,
+            screen: -1,
+            shown_at: Instant::now(),
         }
     }
 
@@ -320,8 +328,10 @@ impl eframe::App for MptApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
-        // The clock and the spinners animate; 200 ms is plenty for a 1 s clock.
-        ctx.request_repaint_after(Duration::from_millis(200));
+        // The backdrop drifts every frame it is drawn, so keep a steady 16 fps
+        // while focused and coast when the window is in the background.
+        let focused = ctx.input(|i| i.focused);
+        ctx.request_repaint_after(Duration::from_millis(if focused { 60 } else { 400 }));
 
         self.handle_focus(&ctx);
         self.handle_close_budget(&ctx);
@@ -354,8 +364,12 @@ impl eframe::App for MptApp {
 
         let (authenticated, loading) = {
             let guard = self.shared.lock().unwrap();
-            (guard.auth.is_authenticated(), guard.auth.is_loading)
+            (guard.auth.is_authenticated(), guard.auth.is_loading || guard.timer.busy)
         };
+        // A spinner needs more frames than a drifting backdrop does.
+        if loading {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
         if authenticated {
             // First frame after sign-in bootstraps the timer thread.
             let _ = self.ensure_timer_thread();
@@ -367,6 +381,21 @@ impl eframe::App for MptApp {
             .frame(egui::Frame::NONE.fill(theme::colors::BACKGROUND))
             .show(ui, |ui| {
                 self.background.paint(ui, authenticated);
+
+                // Nothing pops into view: each screen eases in over ~200 ms, and
+                // the fade restarts whenever the screen changes.
+                let want = if authenticated { 1 } else { 0 };
+                if want != self.screen {
+                    self.screen = want;
+                    self.shown_at = Instant::now();
+                }
+                let t = (self.shown_at.elapsed().as_secs_f32() / 0.22).clamp(0.0, 1.0);
+                let eased = t * t * (3.0 - 2.0 * t);
+                if eased < 1.0 {
+                    ctx.request_repaint_after(Duration::from_millis(16));
+                }
+                ui.set_opacity(eased);
+
                 if !authenticated {
                     if loading {
                         ui::boot_screen(ui);
@@ -377,16 +406,72 @@ impl eframe::App for MptApp {
                     ui::study::home_screen(self, &ctx, ui);
                 }
             });
+
+        self.resize_edges(&ctx, ui);
+    }
+}
+
+impl MptApp {
+    /// A window without decorations gets no OS resize border, so the 5 px ring
+    /// is ours to provide. Drawn last, it wins over anything underneath.
+    fn resize_edges(&self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        use egui::CursorIcon;
+        use egui::viewport::ResizeDirection as Dir;
+
+        let Some(win) = ctx.input(|i| i.viewport().inner_rect) else {
+            return;
+        };
+        let b = 5.0;
+        let (l, r, t, bo) = (win.min.x, win.max.x, win.min.y, win.max.y);
+        let z = |x0: f32, y0: f32, x1: f32, y1: f32| {
+            egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1))
+        };
+        let zones = [
+            (z(l, t, l + b, t + b), Dir::NorthWest, CursorIcon::ResizeNwSe),
+            (z(r - b, t, r, t + b), Dir::NorthEast, CursorIcon::ResizeNeSw),
+            (z(l, bo - b, l + b, bo), Dir::SouthWest, CursorIcon::ResizeNeSw),
+            (z(r - b, bo - b, r, bo), Dir::SouthEast, CursorIcon::ResizeNwSe),
+            (z(l, t + b, l + b, bo - b), Dir::West, CursorIcon::ResizeHorizontal),
+            (z(r - b, t + b, r, bo - b), Dir::East, CursorIcon::ResizeHorizontal),
+            (z(l + b, t, r - b, t + b), Dir::North, CursorIcon::ResizeVertical),
+            (z(l + b, bo - b, r - b, bo), Dir::South, CursorIcon::ResizeVertical),
+        ];
+        for (i, (zone, dir, cursor)) in zones.into_iter().enumerate() {
+            let resp = ui.interact(zone, ui.scope_id().with(("resize", i)), egui::Sense::drag());
+            if resp.hovered() {
+                ctx.set_cursor_icon(cursor);
+                if ctx.input(|i| i.pointer.primary_pressed()) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
+                }
+            }
+        }
+
+        // One hairline so the frameless window does not bleed into the desktop.
+        ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            ui.scope_id().with("mpt.border"),
+        ))
+        .rect_stroke(
+            win.shrink(0.5),
+            0.0,
+            egui::Stroke::new(1.0, theme::colors::LINE_STRONG),
+            egui::StrokeKind::Inside,
+        );
     }
 }
 
 fn main() -> eframe::Result {
+    install_panic_log();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title(WINDOW_TITLE)
+        .with_decorations(false)
+        .with_inner_size(FULL_SIZE)
+        .with_min_inner_size(FULL_MIN);
+    if let Some(icon) = window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(WINDOW_TITLE)
-            .with_decorations(false)
-            .with_inner_size(FULL_SIZE)
-            .with_min_inner_size(FULL_MIN),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -394,4 +479,31 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| Ok(Box::new(MptApp::new(cc)))),
     )
+}
+
+/// There is no console to print to, so a crash leaves one small file behind
+/// instead of the app simply vanishing.
+fn install_panic_log() {
+    std::panic::set_hook(Box::new(|info| {
+        let path = crate::store::app_data_dir().join("crash.log");
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, format!("{info}\n"));
+    }));
+}
+
+/// Taskbar / alt-tab icon, from the same PNG the title bar draws.
+fn window_icon() -> Option<egui::IconData> {
+    let bytes: &[u8] = include_bytes!("../assets/images/logo.png");
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    buf.truncate(info.buffer_size());
+    Some(egui::IconData {
+        rgba: buf,
+        width: info.width,
+        height: info.height,
+    })
 }

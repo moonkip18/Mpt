@@ -114,7 +114,7 @@ fn load_json(path: &std::path::Path) -> Option<Map<String, Value>> {
     serde_json::from_str::<Value>(&raw).ok().and_then(|v| v.as_object().cloned())
 }
 
-fn app_data_dir() -> PathBuf {
+pub(crate) fn app_data_dir() -> PathBuf {
     if let Some(appdata) = std::env::var_os("APPDATA") {
         return PathBuf::from(appdata).join("Mpt");
     }

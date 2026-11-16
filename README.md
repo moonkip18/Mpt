@@ -36,7 +36,8 @@ subject, clock, start/pause, stop. Same process, same session — just small.
 
 Grab `Mpt-windows-x64.zip` from the [releases page](https://github.com/moonkip18/Mpt/releases),
 unzip it anywhere, run `mpt.exe`. Settings and the session snapshot live in
-`%APPDATA%\Mpt`; delete that folder to reset the app.
+`%APPDATA%\Mpt`; delete that folder to reset the app. If it ever closes on its
+own, `%APPDATA%\Mpt\crash.log` holds the reason.
 
 ## Build
 
@@ -48,7 +49,8 @@ cargo build --release
 
 The exe lands at `target/release/mpt.exe`. On Windows the MSVC toolchain is the
 path of least resistance; `cargo check` is enough if you only want to confirm the
-code compiles.
+code compiles. The icon and version stamp in `assets/app.rc` are compiled only by
+MSVC (it owns `rc.exe`), so a GNU build simply produces a plain exe.
 
 CI builds every push and attaches the zip to tagged releases, so you do not need
 a local toolchain to get a binary — see `.github/workflows/build.yml`. Every run

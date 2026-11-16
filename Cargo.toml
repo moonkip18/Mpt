@@ -1,6 +1,6 @@
 [package]
 name = "mpt"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "A minimal desktop study timer for Yeolpumta"
 repository = "https://github.com/moonkip18/Mpt"
@@ -20,6 +20,9 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 rand = "0.8"
 png = "0.17"
+
+[build-dependencies]
+embed-resource = "2"
 
 [profile.release]
 opt-level = 3

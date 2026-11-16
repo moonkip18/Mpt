@@ -13,12 +13,12 @@ use crate::theme::colors::*;
 use crate::theme::{fonts, named};
 use crate::MptApp;
 
-const ICON_MINIMIZE: &str = "–";
-const ICON_MAXIMIZE: &str = "□";
-const ICON_RESTORE: &str = "❐";
-const ICON_CLOSE: &str = "✕";
-const ICON_PIP: &str = "⧉";
-const ICON_EXPAND: &str = "⛶";
+const ICON_MINIMIZE: &str = "\u{2013}";
+const ICON_MAXIMIZE: &str = "\u{25A1}";
+const ICON_RESTORE: &str = "\u{25A1}";
+const ICON_CLOSE: &str = "\u{00D7}";
+const ICON_PIP: &str = "\u{25AD}";
+const ICON_EXPAND: &str = "\u{25A1}";
 
 /// Stable widget id from a name. `Id::new` is deprecated in egui in favour of
 /// salts; a global name is exactly what a fixed chrome button needs.
@@ -28,7 +28,15 @@ fn sid(name: impl std::hash::Hash + std::fmt::Debug) -> Id {
 }
 
 pub fn font(size: f32, family: &str) -> egui::FontId {
-    egui::FontId::new(size, named(family))
+    // Body text rides on the face bundled into the binary. System faces are a
+    // nice-to-have for the display and clock, never a requirement: a family that
+    // resolves badly turns every label into a row of boxes.
+    let family = if family == fonts::UI {
+        egui::FontFamily::Proportional
+    } else {
+        named(family)
+    };
+    egui::FontId::new(size, family)
 }
 
 pub fn hairline(ui: &mut Ui) {
@@ -61,9 +69,13 @@ pub fn spinner(ui: &mut Ui, center: Pos2, size: f32, color: Color32) {
 /// A 40×38 chrome button painted into `rect`; close gets the red hover.
 fn chrome_button(ui: &mut Ui, rect: Rect, id: Id, icon: &str, tooltip: &str, danger: bool) -> bool {
     let resp = ui.interact(rect, id, Sense::click());
-    if resp.hovered() {
+    let hover = ui
+        .ctx()
+        .animate_bool_with_time(id.with("hover"), resp.hovered(), 0.12);
+    if hover > 0.002 {
+        let target = if danger { ACCENT_SOFT } else { LINE };
         ui.painter()
-            .rect_filled(rect, 0.0, if danger { ACCENT_SOFT } else { LINE });
+            .rect_filled(rect, 0.0, mix(Color32::TRANSPARENT, target, hover));
         resp.clone().on_hover_text(tooltip);
     }
     ui.painter().text(
@@ -71,7 +83,7 @@ fn chrome_button(ui: &mut Ui, rect: Rect, id: Id, icon: &str, tooltip: &str, dan
         Align2::CENTER_CENTER,
         icon,
         font(15.0, fonts::UI),
-        INK_DIM,
+        mix(INK_DIM, INK, hover),
     );
     resp.clicked()
 }
@@ -224,8 +236,20 @@ pub fn login_screen(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui) {
 }
 
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    mix(a, b, t)
+}
+
+/// Interpolate two colours, alpha included, so hover states can fade instead of
+/// snapping on.
+pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
     let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
-    Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
+    Color32::from_rgba_unmultiplied(
+        l(a.r(), b.r()),
+        l(a.g(), b.g()),
+        l(a.b(), b.b()),
+        l(a.a(), b.a()),
+    )
 }
 
 /// The centered 360 px column, with the same vertical rhythm as the original.
@@ -340,14 +364,14 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
     let eye_resp = ui.interact(eye_rect, sid("mpt.login.reveal"), Sense::click());
     if eye_resp.hovered() {
         eye_resp.clone().on_hover_text("Show password");
+        eye_resp.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
     }
-    let eye = if app.obscure_password { "👁" } else { "🙈" };
     ui.painter().text(
-        eye_rect.center(),
-        Align2::CENTER_CENTER,
-        eye,
-        font(15.0, fonts::UI),
-        INK_FAINT,
+        Pos2::new(eye_rect.max.x - 13.0, eye_rect.center().y),
+        Align2::RIGHT_CENTER,
+        if app.obscure_password { "show" } else { "hide" },
+        font(10.0, fonts::MONO),
+        if eye_resp.hovered() { INK } else { INK_FAINT },
     );
     if eye_resp.clicked() {
         app.obscure_password = !app.obscure_password;
@@ -361,9 +385,12 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
             Vec2::splat(4.0),
         );
         ui.painter().circle_filled(dot_rect.center(), 2.0, ACCENT);
-        let galley =
-            ui.painter()
-                .layout_no_wrap(err.to_string(), font(12.0, fonts::UI), ACCENT);
+        let galley = ui.painter().layout(
+            err.to_string(),
+            font(12.0, fonts::UI),
+            ACCENT,
+            err_rect.width() - 17.0,
+        );
         ui.painter().galley(
             Pos2::new(err_rect.min.x + 17.0, err_rect.min.y + 3.0),
             galley,
@@ -374,7 +401,20 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
     // Primary action.
     let btn_rect = rect(38.0, 46.0);
     let btn_resp = ui.interact(btn_rect, sid("mpt.login.submit"), Sense::click());
-    ui.painter().rect_filled(btn_rect, 3.0, SYNAPSE);
+    let hover = ui.ctx().animate_bool_with_time(
+        sid("mpt.login.submit.hover"),
+        btn_resp.hovered() && !busy,
+        0.12,
+    );
+    let down = btn_resp.is_pointer_button_down_on() && !busy;
+    ui.painter().rect_filled(
+        btn_rect,
+        3.0,
+        mix(SYNAPSE, Color32::WHITE, if down { 0.85 } else { hover * 0.45 }),
+    );
+    if !busy {
+        btn_resp.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
     if busy {
         spinner(ui, btn_rect.center(), 14.0, BACKGROUND);
     } else {
@@ -394,9 +434,17 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
     if app.google_enabled {
         let g_rect = rect(10.0, 46.0);
         let g_resp = ui.interact(g_rect, sid("mpt.login.google"), Sense::click());
-        if g_resp.hovered() {
-            ui.painter().rect_filled(g_rect, 3.0, SURFACE_RAISED);
-        }
+        let g_hover = ui.ctx().animate_bool_with_time(
+            sid("mpt.login.google.hover"),
+            g_resp.hovered() && !busy,
+            0.12,
+        );
+        ui.painter().rect_filled(
+            g_rect,
+            3.0,
+            mix(Color32::TRANSPARENT, SURFACE_RAISED, g_hover),
+        );
+        g_resp.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
         ui.painter()
             .rect_stroke(g_rect, 3.0, Stroke::new(1.0, LINE_STRONG), StrokeKind::Inside);
         ui.painter().text(
@@ -454,10 +502,15 @@ fn put_field(
         edit = edit.lock_focus(true);
     }
     let resp = ui.put(rect, edit);
-    if resp.has_focus() {
-        ui.painter()
-            .rect_stroke(rect, 3.0, Stroke::new(1.0, INK_FAINT), StrokeKind::Inside);
-    }
+    let focus = ui
+        .ctx()
+        .animate_bool_with_time(id.with("focus"), resp.has_focus(), 0.15);
+    ui.painter().rect_stroke(
+        rect,
+        3.0,
+        Stroke::new(1.0, mix(LINE, INK_FAINT, focus)),
+        StrokeKind::Inside,
+    );
     resp
 }
 

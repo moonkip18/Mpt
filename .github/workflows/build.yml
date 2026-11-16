@@ -28,7 +28,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item target/release/mpt.exe out/
-          Compress-Archive -Path out/mpt.exe -DestinationPath Mpt-windows-x64.zip
+          Copy-Item README.md out/readme.txt
+          Compress-Archive -Path out/mpt.exe,out/readme.txt -DestinationPath Mpt-windows-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:

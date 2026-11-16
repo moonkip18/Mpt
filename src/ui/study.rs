@@ -15,7 +15,7 @@ use crate::timer::TimerCmd;
 use crate::utils::format::{format_clock, format_day_label, format_hm, format_hm_compact};
 use crate::MptApp;
 
-use super::{font, hairline, spinner, title_bar};
+use super::{font, hairline, mix, spinner, title_bar};
 
 const PANEL_WIDTH: f32 = 316.0;
 const CHIP_HEIGHT: f32 = 30.0;
@@ -291,18 +291,18 @@ fn subject_strip(app: &mut MptApp, ui: &mut Ui, rect: Rect, snap: &Snap, enabled
         let resp = ui.interact(chip, sid(("mpt.chip", subject.id)), Sense::click());
         let selected = Some(subject.id) == current_id;
         let hovered = resp.hovered() && enabled;
-
-        ui.painter().rect_filled(
-            chip,
-            2.0,
-            if selected {
-                SURFACE_RAISED
-            } else if hovered {
-                SURFACE
-            } else {
-                Color32::TRANSPARENT
-            },
+        let h = ui.ctx().animate_bool_with_time(
+            sid(("mpt.chip.hover", subject.id)),
+            hovered,
+            0.11,
         );
+
+        let fill = if selected {
+            SURFACE_RAISED
+        } else {
+            mix(Color32::TRANSPARENT, SURFACE, h)
+        };
+        ui.painter().rect_filled(chip, 2.0, fill);
         ui.painter().rect_stroke(
             chip,
             2.0,
@@ -353,8 +353,8 @@ fn subject_strip(app: &mut MptApp, ui: &mut Ui, rect: Rect, snap: &Snap, enabled
         ui.painter().text(
             btn.center(),
             Align2::CENTER_CENTER,
-            "›",
-            font(16.0, fonts::UI),
+            ">",
+            font(13.0, fonts::MONO),
             if hovered { INK } else { INK_DIM },
         );
         resp.clone().on_hover_text("All subjects");
@@ -530,32 +530,27 @@ fn action_button(
     let width = (galley.size().x + 52.0).max(96.0);
     let rect = Rect::from_min_size(Pos2::new(*x, y), Vec2::new(width, BUTTON_HEIGHT));
     let resp = ui.interact(rect, sid(("mpt.action", id)), Sense::click());
-    let hovered = resp.hovered() && enabled;
+    let h = ui
+        .ctx()
+        .animate_bool_with_time(sid(("mpt.action.hover", id)), resp.hovered() && enabled, 0.11);
+    let down = resp.is_pointer_button_down_on() && enabled;
 
     let (bg, fg, border) = if !enabled {
         (SURFACE, INK_FAINT, None)
     } else {
         match kind {
             ButtonKind::Primary => (
-                if hovered { Color32::WHITE } else { SYNAPSE },
+                mix(SYNAPSE, Color32::WHITE, if down { 0.9 } else { h * 0.45 }),
                 BACKGROUND,
                 None,
             ),
             ButtonKind::Accent => (
-                if hovered {
-                    ACCENT
-                } else {
-                    Color32::TRANSPARENT
-                },
-                if hovered { INK } else { ACCENT },
+                mix(Color32::TRANSPARENT, ACCENT, h),
+                mix(ACCENT, INK, h),
                 Some(ACCENT_SOFT),
             ),
             ButtonKind::Ghost => (
-                if hovered {
-                    SURFACE_RAISED
-                } else {
-                    Color32::TRANSPARENT
-                },
+                mix(Color32::TRANSPARENT, SURFACE_RAISED, h),
                 INK,
                 Some(LINE_STRONG),
             ),
@@ -586,21 +581,16 @@ fn action_button(
 }
 
 fn notice_line(app: &mut MptApp, ui: &mut Ui, rect: Rect, notice: &str) {
-    ui.painter().text(
-        Pos2::new(rect.min.x, rect.min.y + 2.0),
-        Align2::LEFT_TOP,
-        "ⓘ",
-        font(12.0, fonts::UI),
-        INK_FAINT,
-    );
+    ui.painter()
+        .circle_filled(Pos2::new(rect.min.x + 4.0, rect.min.y + 7.0), 2.0, ACCENT);
     let galley = ui.painter().layout(
         notice.to_string(),
         font(12.0, fonts::UI),
         INK_DIM,
-        rect.width() - 34.0,
+        rect.width() - 42.0,
     );
     ui.painter()
-        .galley(Pos2::new(rect.min.x + 20.0, rect.min.y), galley, INK_DIM);
+        .galley(Pos2::new(rect.min.x + 16.0, rect.min.y), galley, INK_DIM);
 
     let close = Rect::from_min_size(
         Pos2::new(rect.max.x - 14.0, rect.min.y),
@@ -610,7 +600,7 @@ fn notice_line(app: &mut MptApp, ui: &mut Ui, rect: Rect, notice: &str) {
     ui.painter().text(
         close.center(),
         Align2::CENTER_CENTER,
-        "✕",
+        "×",
         font(11.0, fonts::UI),
         if resp.hovered() { INK } else { INK_FAINT },
     );
@@ -672,8 +662,14 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
                             Vec2::new(ui.available_width(), STAT_ROW_HEIGHT),
                             Sense::click(),
                         );
-                        if resp.hovered() && idle {
-                            ui.painter().rect_filled(row_rect, 2.0, SURFACE);
+                        let h = ui.ctx().animate_bool_with_time(
+                            sid(("mpt.row.hover", row.id, row.title.as_str())),
+                            resp.hovered() && idle,
+                            0.11,
+                        );
+                        if h > 0.002 {
+                            ui.painter()
+                                .rect_filled(row_rect, 2.0, mix(Color32::TRANSPARENT, SURFACE, h));
                         }
 
                         let colour = from_argb(row.color_int);
@@ -717,7 +713,12 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
                             0.0,
                             LINE,
                         );
-                        let fraction = (row.ms as f32 / max_ms as f32).clamp(0.0, 1.0);
+                        let target = (row.ms as f32 / max_ms as f32).clamp(0.0, 1.0);
+                        let fraction = ui.ctx().animate_value_with_time(
+                            sid(("mpt.bar", row.id, row.title.as_str())),
+                            target,
+                            0.45,
+                        );
                         ui.painter().rect_filled(
                             Rect::from_min_max(
                                 Pos2::new(x0, track_y),
@@ -809,18 +810,17 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
     );
 
     let logout = Rect::from_min_size(
-        Pos2::new(inner.max.x - 22.0, footer_top + 12.0),
-        Vec2::new(22.0, 22.0),
+        Pos2::new(inner.max.x - 56.0, footer_top + 12.0),
+        Vec2::new(56.0, 22.0),
     );
     let resp = ui.interact(logout, sid("mpt.logout"), Sense::click());
     ui.painter().text(
-        logout.center(),
-        Align2::CENTER_CENTER,
-        "⎋",
-        font(14.0, fonts::UI),
+        Pos2::new(logout.max.x, logout.center().y),
+        Align2::RIGHT_CENTER,
+        "sign out",
+        font(11.0, fonts::MONO),
         if resp.hovered() { INK } else { INK_FAINT },
     );
-    resp.clone().on_hover_text("Sign out");
     if resp.clicked() {
         app.logout_requested = true;
     }
@@ -885,13 +885,28 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
     if play_resp.hovered() && play_enabled {
         ui.painter().rect_filled(play_rect, 2.0, LINE);
     }
-    ui.painter().text(
-        play_rect.center(),
-        Align2::CENTER_CENTER,
-        if resting || !running { "▶" } else { "❚❚" },
-        font(17.0, fonts::UI),
-        if !play_enabled { INK_FAINT } else { INK },
-    );
+    // Drawn rather than typed: no font can turn these into boxes.
+    let icon = if play_enabled { INK } else { INK_FAINT };
+    let c = play_rect.center();
+    if resting || !running {
+        ui.painter().add(egui::Shape::convex_polygon(
+            vec![
+                Pos2::new(c.x - 4.0, c.y - 6.0),
+                Pos2::new(c.x - 4.0, c.y + 6.0),
+                Pos2::new(c.x + 6.0, c.y),
+            ],
+            icon,
+            Stroke::NONE,
+        ));
+    } else {
+        for dx in [-4.0, 1.5] {
+            ui.painter().rect_filled(
+                Rect::from_min_size(Pos2::new(c.x + dx, c.y - 6.0), Vec2::new(2.5, 12.0)),
+                0.0,
+                icon,
+            );
+        }
+    }
     if play_resp.clicked() && play_enabled {
         app.send_timer(if resting || !running {
             TimerCmd::Start
@@ -905,12 +920,10 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
     if stop_resp.hovered() && stop_enabled {
         ui.painter().rect_filled(stop_rect, 2.0, ACCENT_SOFT);
     }
-    ui.painter().text(
-        stop_resp.rect.center(),
-        Align2::CENTER_CENTER,
-        "■",
-        font(15.0, fonts::UI),
-        if !stop_enabled { INK_FAINT } else { ACCENT },
+    ui.painter().rect_filled(
+        Rect::from_center_size(stop_rect.center(), Vec2::splat(10.0)),
+        0.0,
+        if stop_enabled { ACCENT } else { INK_FAINT },
     );
     if stop_resp.clicked() && stop_enabled {
         app.send_timer(TimerCmd::Stop);

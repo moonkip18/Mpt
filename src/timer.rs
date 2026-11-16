@@ -120,6 +120,7 @@ impl TimerController {
     fn run(&mut self, rx: Receiver<TimerCmd>) {
         let mut next_stats = Instant::now() + StdDuration::from_secs(30);
         let mut next_day = Instant::now() + StdDuration::from_secs(20);
+        let mut next_remote = Instant::now() + StdDuration::from_secs(60);
         loop {
             match rx.recv_timeout(StdDuration::from_millis(250)) {
                 Ok(TimerCmd::Shutdown) => break,
@@ -145,6 +146,16 @@ impl TimerController {
             if now >= next_day {
                 self.check_day_rollover();
                 next_day = Instant::now() + StdDuration::from_secs(20);
+            }
+            // Is the phone still studying? Clear the badge first so a session
+            // that ended does not leave it on screen forever.
+            if now >= next_remote {
+                let running = self.shared.lock().unwrap().timer.is_running;
+                if !running {
+                    self.with_state(|s| s.remote_active = false);
+                    self.probe_remote_activity();
+                }
+                next_remote = Instant::now() + StdDuration::from_secs(60);
             }
         }
     }

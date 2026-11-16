@@ -151,18 +151,21 @@ fn system_fonts() -> egui::FontDefinitions {
         }
     }
 
-    // A registered family must own at least one font, or egui panics the first
-    // time it lays out text. Borrow the bundled proportional face if no system
-    // file was found.
-    let fallback = defs
+    // Bundled faces stay in every chain, so a glyph the system face is missing
+    // (bullets, arrows, the few symbols the UI uses) still has somewhere to go
+    // instead of showing up as a box.
+    let bundled = defs
         .families
         .get(&FontFamily::Proportional)
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_else(|| vec!["Ubuntu-Light".to_string()]);
     for (family, _) in candidates {
-        defs.families
-            .entry(named(family))
-            .or_insert_with(|| fallback.clone());
+        let list = defs.families.entry(named(family)).or_default();
+        for name in &bundled {
+            if !list.contains(name) {
+                list.push(name.clone());
+            }
+        }
     }
 
     defs
