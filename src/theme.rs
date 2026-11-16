@@ -125,15 +125,17 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_fonts(system_fonts());
 }
 
-/// Register the three system families, falling back to egui's bundled faces
-/// when a Windows font file cannot be read.
+/// Register the three system families, with Segoe UI Symbol riding last in
+/// every chain: the base faces cover the text, the symbol face covers the few
+/// dingbats the UI draws (❐ ⧉ ⛶ ⓘ ⎋ ▶ ❚ 👁 🙈) that no base face has.
 fn system_fonts() -> egui::FontDefinitions {
     let mut defs = egui::FontDefinitions::default();
 
-    let candidates: [(&str, &[&str]); 3] = [
+    let candidates: [(&str, &[&str]); 4] = [
         (fonts::UI, &["segoeui.ttf", "seguisb.ttf"]),
         (fonts::DISPLAY, &["georgia.ttf", "georgiai.ttf"]),
         (fonts::MONO, &["consola.ttf"]),
+        ("Segoe UI Symbol", &["seguisym.ttf"]),
     ];
 
     for (family, files) in candidates {
@@ -151,19 +153,48 @@ fn system_fonts() -> egui::FontDefinitions {
         }
     }
 
-    // Bundled faces stay in every chain, so a glyph the system face is missing
-    // (bullets, arrows, the few symbols the UI uses) still has somewhere to go
-    // instead of showing up as a box.
-    let bundled = defs
+    // egui's own widgets (text inputs, popups) resolve through Proportional and
+    // Monospace; leave those unbound and every hint they draw is a box.
+    for (source, target) in [
+        (fonts::UI, FontFamily::Proportional),
+        (fonts::MONO, FontFamily::Monospace),
+    ] {
+        if let Some(chain) = defs.families.get(&named(source)).cloned() {
+            let list = defs.families.entry(target).or_default();
+            for name in chain {
+                if !list.contains(&name) {
+                    list.push(name);
+                }
+            }
+        }
+    }
+
+    // The symbol face goes last everywhere, so a glyph the base face is
+    // missing still has somewhere to go instead of showing up as a box.
+    let symbol = defs
         .families
-        .get(&FontFamily::Proportional)
+        .get(&named("Segoe UI Symbol"))
         .cloned()
-        .unwrap_or_else(|| vec!["Ubuntu-Light".to_string()]);
-    for (family, _) in candidates {
-        let list = defs.families.entry(named(family)).or_default();
-        for name in &bundled {
+        .unwrap_or_default();
+    let mut targets: Vec<FontFamily> = candidates.iter().map(|(family, _)| named(family)).collect();
+    targets.push(FontFamily::Proportional);
+    targets.push(FontFamily::Monospace);
+    for family in targets.clone() {
+        let list = defs.families.entry(family).or_default();
+        for name in &symbol {
             if !list.contains(name) {
                 list.push(name.clone());
+            }
+        }
+    }
+
+    // Nothing resolved at all (no readable Windows fonts): borrow whichever
+    // face did load. An empty family draws every character as a box.
+    if let Some(face) = defs.font_data.keys().next().cloned() {
+        for family in targets {
+            let list = defs.families.entry(family).or_default();
+            if list.is_empty() {
+                list.push(face.clone());
             }
         }
     }

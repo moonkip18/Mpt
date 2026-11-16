@@ -45,3 +45,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Mpt-windows-x64.zip
+          body: |
+            Fixed Bug:
+            - Every label rendered as [][][]: body text was routed to an unregistered font family; it now resolves through the registered system faces (Segoe UI / Georgia / Consolas).
+            - Missing-glyph boxes everywhere: Segoe UI Symbol now rides last in every font chain, so icons like ❐ ⧉ ⛶ ⓘ ⎋ ▶ ❚ 👁 🙈 render instead of tofu.
+            - Window buttons showed as identical empty squares: the original ❐ ✕ ⧉ ⛶ glyphs are back.
+            - App much slower than before: repaint cadence restored to 200 ms; the 60 ms focused / 16 ms loading per-frame pumps are gone.
+            - Hairline outline around the whole window: removed; hairlines are scoped to the screens again, resize hit-zones kept.
+            - Permanent border on every input field: the focus-only hairline is back.
+            - Preload fade / screen flash on login and screen switches: removed; screens draw at full opacity immediately.
+            - Eye toggle showed the words "show"/"hide": the original 👁 / 🙈 glyphs are back.
+            - Restyled notice marker, close button, subject-strip arrow and sign-out control: ⓘ, ✕, › and ⎋ restored.
+            - Hover and bar animations now share one duration (0.12 s hover, 0.45 s bars) — the only change kept from the feel layer.

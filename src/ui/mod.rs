@@ -13,12 +13,12 @@ use crate::theme::colors::*;
 use crate::theme::{fonts, named};
 use crate::MptApp;
 
-const ICON_MINIMIZE: &str = "\u{2013}";
-const ICON_MAXIMIZE: &str = "\u{25A1}";
-const ICON_RESTORE: &str = "\u{25A1}";
-const ICON_CLOSE: &str = "\u{00D7}";
-const ICON_PIP: &str = "\u{25AD}";
-const ICON_EXPAND: &str = "\u{25A1}";
+const ICON_MINIMIZE: &str = "–";
+const ICON_MAXIMIZE: &str = "□";
+const ICON_RESTORE: &str = "❐";
+const ICON_CLOSE: &str = "✕";
+const ICON_PIP: &str = "⧉";
+const ICON_EXPAND: &str = "⛶";
 
 /// Stable widget id from a name. `Id::new` is deprecated in egui in favour of
 /// salts; a global name is exactly what a fixed chrome button needs.
@@ -28,15 +28,7 @@ fn sid(name: impl std::hash::Hash + std::fmt::Debug) -> Id {
 }
 
 pub fn font(size: f32, family: &str) -> egui::FontId {
-    // Body text rides on the face bundled into the binary. System faces are a
-    // nice-to-have for the display and clock, never a requirement: a family that
-    // resolves badly turns every label into a row of boxes.
-    let family = if family == fonts::UI {
-        egui::FontFamily::Proportional
-    } else {
-        named(family)
-    };
-    egui::FontId::new(size, family)
+    egui::FontId::new(size, named(family))
 }
 
 pub fn hairline(ui: &mut Ui) {
@@ -366,12 +358,13 @@ fn login_form(app: &mut MptApp, ui: &mut Ui, busy: bool, error: Option<&str>) {
         eye_resp.clone().on_hover_text("Show password");
         eye_resp.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
     }
+    let eye = if app.obscure_password { "👁" } else { "🙈" };
     ui.painter().text(
-        Pos2::new(eye_rect.max.x - 13.0, eye_rect.center().y),
-        Align2::RIGHT_CENTER,
-        if app.obscure_password { "show" } else { "hide" },
-        font(10.0, fonts::MONO),
-        if eye_resp.hovered() { INK } else { INK_FAINT },
+        eye_rect.center(),
+        Align2::CENTER_CENTER,
+        eye,
+        font(15.0, fonts::UI),
+        INK_FAINT,
     );
     if eye_resp.clicked() {
         app.obscure_password = !app.obscure_password;
@@ -502,15 +495,12 @@ fn put_field(
         edit = edit.lock_focus(true);
     }
     let resp = ui.put(rect, edit);
-    let focus = ui
-        .ctx()
-        .animate_bool_with_time(id.with("focus"), resp.has_focus(), 0.15);
-    ui.painter().rect_stroke(
-        rect,
-        3.0,
-        Stroke::new(1.0, mix(LINE, INK_FAINT, focus)),
-        StrokeKind::Inside,
-    );
+    // Hairline only while the field is focused — the frame's own stroke is the
+    // resting look, same as the Flutter fields this mirrors.
+    if resp.has_focus() {
+        ui.painter()
+            .rect_stroke(rect, 3.0, Stroke::new(1.0, INK_FAINT), StrokeKind::Inside);
+    }
     resp
 }
 

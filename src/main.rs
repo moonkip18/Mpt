@@ -97,9 +97,6 @@ pub struct MptApp {
     background: background::Background,
     /// The window has been placed once (eframe does not centre on its own).
     positioned: bool,
-    /// 0 = sign-in, 1 = study. Changing it restarts the fade.
-    screen: i8,
-    shown_at: Instant,
 }
 
 /// Everything the timer thread needs, parked until authentication happens.
@@ -170,8 +167,6 @@ impl MptApp {
             focused: true,
             background: background::Background::new(),
             positioned: false,
-            screen: -1,
-            shown_at: Instant::now(),
         }
     }
 
@@ -328,10 +323,8 @@ impl eframe::App for MptApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
-        // The backdrop drifts every frame it is drawn, so keep a steady 16 fps
-        // while focused and coast when the window is in the background.
-        let focused = ctx.input(|i| i.focused);
-        ctx.request_repaint_after(Duration::from_millis(if focused { 60 } else { 400 }));
+        // The clock and the spinners animate; 200 ms is plenty for a 1 s clock.
+        ctx.request_repaint_after(Duration::from_millis(200));
 
         self.handle_focus(&ctx);
         self.handle_close_budget(&ctx);
@@ -374,12 +367,8 @@ impl eframe::App for MptApp {
 
         let (authenticated, loading) = {
             let guard = self.shared.lock().unwrap();
-            (guard.auth.is_authenticated(), guard.auth.is_loading || guard.timer.busy)
+            (guard.auth.is_authenticated(), guard.auth.is_loading)
         };
-        // A spinner needs more frames than a drifting backdrop does.
-        if loading {
-            ctx.request_repaint_after(Duration::from_millis(16));
-        }
         if authenticated {
             // First frame after sign-in bootstraps the timer thread.
             let _ = self.ensure_timer_thread();
@@ -391,20 +380,6 @@ impl eframe::App for MptApp {
             .frame(egui::Frame::NONE.fill(theme::colors::BACKGROUND))
             .show(ui, |ui| {
                 self.background.paint(ui, authenticated);
-
-                // Nothing pops into view: each screen eases in over ~200 ms, and
-                // the fade restarts whenever the screen changes.
-                let want = if authenticated { 1 } else { 0 };
-                if want != self.screen {
-                    self.screen = want;
-                    self.shown_at = Instant::now();
-                }
-                let t = (self.shown_at.elapsed().as_secs_f32() / 0.22).clamp(0.0, 1.0);
-                let eased = t * t * (3.0 - 2.0 * t);
-                if eased < 1.0 {
-                    ctx.request_repaint_after(Duration::from_millis(16));
-                }
-                ui.set_opacity(eased);
 
                 if !authenticated {
                     if loading {
@@ -423,7 +398,8 @@ impl eframe::App for MptApp {
 
 impl MptApp {
     /// A window without decorations gets no OS resize border, so the 5 px ring
-    /// is ours to provide. Drawn last, it wins over anything underneath.
+    /// is ours to provide. Hit-testing only — the frame draws no border of its
+    /// own; hairlines belong to the screens, not the window edge.
     fn resize_edges(&self, ctx: &egui::Context, ui: &mut egui::Ui) {
         use egui::CursorIcon;
         use egui::viewport::ResizeDirection as Dir;
@@ -455,18 +431,6 @@ impl MptApp {
                 }
             }
         }
-
-        // One hairline so the frameless window does not bleed into the desktop.
-        ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Foreground,
-            ui.scope_id().with("mpt.border"),
-        ))
-        .rect_stroke(
-            win.shrink(0.5),
-            0.0,
-            egui::Stroke::new(1.0, theme::colors::LINE_STRONG),
-            egui::StrokeKind::Inside,
-        );
     }
 }
 
