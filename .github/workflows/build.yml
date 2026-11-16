@@ -66,10 +66,8 @@ jobs:
             Mpt-Setup-*.exe
           body: |
             Added:
-            - Mpt-Setup-1.0.6.exe: a small installer — no admin prompt, installs to your user folder in a second, Start Menu shortcut, clean uninstall from Settings. The zip still works for portable use.
-            - In-app updates: "check for updates" in the subject panel. If a release is out, one click downloads it, the app swaps itself and reopens. No browser, no second installer.
-            - The updater needs a bare Mpt.exe on releases, so that is attached too.
+            - Subjects can be created right from the app: open the subject menu (›), "+ add subject" at the bottom, type a name, press Enter. It goes to YPT, picks a colour and selects itself.
+            - The update control stays out of the way now — it only appears when a newer release is actually out, checked quietly once at startup.
 
             Fixed Bug:
-            - No icon in alt-tab or on the taskbar: the window icon was fed the logo PNG's raw 3-bytes-per-pixel RGB data labelled as RGBA, so the system icon came out garbled and blank. The mark is now decoded to real RGBA once and shared by the title bar and the window icon.
-            - The exe's version metadata was stuck on 1.0.3 in Windows' properties while releases moved on.
+            - The "check for updates" button sat in the footer permanently even though it had nothing to say most of the time.

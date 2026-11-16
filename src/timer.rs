@@ -12,6 +12,7 @@ use chrono::{DateTime, Local};
 use serde_json::Value;
 
 use crate::daily_stats::DailyStats;
+use crate::localization::tr_msg;
 use crate::models::SubjectModel;
 use crate::repositories::offline_sync::OfflineSyncRepository;
 use crate::repositories::timer::{TimerApi, TimerStartResult};
@@ -30,6 +31,7 @@ pub enum TimerCmd {
     Pause,
     Stop,
     SelectSubject(i64),
+    CreateSubject(String),
     RefreshStats,
     ApplySettings { day_reset_hour: i64, language: String, timezone: String },
     ClearNotice,
@@ -192,6 +194,7 @@ impl TimerController {
             TimerCmd::Pause => self.pause(),
             TimerCmd::Stop => self.stop(),
             TimerCmd::SelectSubject(id) => self.select_subject(id),
+            TimerCmd::CreateSubject(title) => self.create_subject(title),
             TimerCmd::RefreshStats => self.refresh_stats(),
             TimerCmd::ApplySettings { day_reset_hour, language, timezone } => {
                 self.apply_settings(day_reset_hour, language, timezone)
@@ -203,6 +206,39 @@ impl TimerController {
     }
 
     // -------------------------------------------------------------- subjects
+
+    /// Create a subject on YPT, reload the list and select it. Runs on the
+    /// timer thread; the UI only sends the command and reads the notice.
+    fn create_subject(&self, title: String) {
+        let title = title.trim();
+        if title.is_empty() {
+            return;
+        }
+        // A non-empty sync queue means the last network calls failed; creating
+        // would just pile another failed request onto it.
+        if self.shared.lock().unwrap().offline.has_pending() {
+            self.with_state(|t| t.notice = Some("You look offline — the subject needs a connection.".into()));
+            return;
+        }
+        let colors = crate::utils::color::DEFAULT_SUBJECT_COLORS;
+        let pick = rand::seq::SliceRandom::choose(colors, &mut rand::thread_rng())
+            .copied()
+            .unwrap_or(0xFFA78BFA) as i64;
+        match self.deps.subjects.create_subject(title, pick) {
+            Ok(created) => {
+                self.load_subjects();
+                self.select_subject(created.id);
+                self.refresh_stats();
+            }
+            Err(e) => {
+                let msg = match e {
+                    crate::api::ApiError::Decode(m) => m,
+                    other => tr_msg("subject_create_failed", None, Some("Falha ao criar matéria")) + &format!(" ({other})"),
+                };
+                self.with_state(|t| t.notice = Some(msg));
+            }
+        }
+    }
 
     fn load_subjects(&self) {
         let result = self.deps.subjects.fetch_subjects_data(

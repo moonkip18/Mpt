@@ -101,8 +101,12 @@ pub struct MptApp {
     /// When the timer thread first reported real data; drives the one-shot
     /// 300 ms settle that marks "the app is loaded". None until then.
     pub(crate) loaded_at: Option<Instant>,
-    /// In-app update flow, polled by the footer button.
+    /// In-app update flow, polled by the footer control when an update exists.
     pub(crate) update: updater::UpdateShared,
+    /// "+ add subject" input state inside the all-subjects menu: Some(() while
+    /// the input row is open.
+    pub(crate) subject_creating: Option<String>,
+    pub(crate) subject_draft: String,
 }
 
 /// Everything the timer thread needs, parked until authentication happens.
@@ -149,6 +153,11 @@ impl MptApp {
             settings,
         });
 
+        // Quiet startup probe: lights the footer control only if a newer
+        // release is actually published.
+        let update: updater::UpdateShared = Arc::new(Mutex::new(updater::UpdateState::Idle));
+        updater::check_quiet(update.clone());
+
         Self {
             shared,
             timer_tx: Arc::new(Mutex::new(None)),
@@ -174,10 +183,11 @@ impl MptApp {
             background: background::Background::new(),
             positioned: false,
             loaded_at: None,
-            update: Arc::new(Mutex::new(updater::UpdateState::Idle)),
+            update,
+            subject_creating: None,
+            subject_draft: String::new(),
         }
     }
-
     /// Send a command to the timer thread, spawning it on first use.
     pub(crate) fn send_timer(&self, cmd: TimerCmd) {
         if let Some(tx) = self.ensure_timer_thread() {

@@ -68,8 +68,19 @@ fn staging_paths() -> Option<(PathBuf, PathBuf, PathBuf)> {
     ))
 }
 
-/// Spawn the check thread. Never blocks the UI.
+/// Spawn the check thread. Never blocks the UI; failures surface on the
+/// control (used by the retry click).
 pub fn check(state: UpdateShared) {
+    spawn_check(state, false)
+}
+
+/// Startup probe: a newer release lights the control up; anything else —
+/// including a failed request — stays invisible.
+pub fn check_quiet(state: UpdateShared) {
+    spawn_check(state, true)
+}
+
+fn spawn_check(state: UpdateShared, quiet: bool) {
     std::thread::spawn(move || {
         set(&state, UpdateState::Checking);
         match check_blocking() {
@@ -78,7 +89,14 @@ pub fn check(state: UpdateShared) {
                 UpdateState::Available { version, url, size },
             ),
             Ok(None) => set(&state, UpdateState::UpToDate),
-            Err(e) => set(&state, UpdateState::Failed(e)),
+            Err(e) => set(
+                &state,
+                if quiet {
+                    UpdateState::Idle
+                } else {
+                    UpdateState::Failed(e)
+                },
+            ),
         }
     });
 }

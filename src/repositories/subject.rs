@@ -21,6 +21,13 @@ pub struct SubjectFetchResult {
 pub trait SubjectsApi: Send + Sync {
     fn fetch_subjects_data(&self, language: &str, timezone: &str, version: i64)
         -> SubjectFetchResult;
+
+    /// Create a subject on YPT; only the concrete repository implements it
+    /// (the timer thread calls it through this trait).
+    fn create_subject(&self, title: &str, color_int: i64) -> Result<SubjectModel, ApiError> {
+        let _ = (title, color_int);
+        unimplemented!("subject creation is not part of this fake")
+    }
 }
 
 pub struct SubjectRepository {

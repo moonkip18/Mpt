@@ -377,7 +377,8 @@ fn subject_strip(app: &mut MptApp, ui: &mut Ui, rect: Rect, snap: &Snap, enabled
     }
 }
 
-/// The full list behind the `›` button: every subject with today's time.
+/// The full list behind the `›` button: every subject with today's time, and
+/// an inline "+ add subject" at the bottom that creates one on YPT.
 fn all_subjects_menu(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, snap: &Snap) {
     let Some(anchor) = app.all_subjects_rect else {
         return;
@@ -387,8 +388,10 @@ fn all_subjects_menu(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, snap: &
         return;
     }
 
+    // Rows + hairline + add row. The add row grows into an input row.
+    let adding = app.subject_creating.is_some();
     let rows = snap.timer.subjects.len() as f32;
-    let height = (rows * 30.0 + 10.0).min(340.0);
+    let height = (rows * 30.0 + 42.0).min(340.0);
     let below = anchor.bottom() + 4.0;
     let y = if below + height > ui.max_rect().max.y - 8.0 {
         (anchor.top() - height - 4.0).max(ui.max_rect().min.y + 4.0)
@@ -454,6 +457,72 @@ fn all_subjects_menu(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, snap: &
                                 if resp.clicked() && enabled {
                                     app.send_timer(TimerCmd::SelectSubject(subject.id));
                                     app.all_subjects_rect = None;
+                                }
+                            }
+
+                            // Inline creation: quiet row until clicked, then a
+                            // one-line field. Enter creates, Esc cancels.
+                            ui.painter().rect_filled(
+                                Rect::from_min_max(
+                                    Pos2::new(ui.min_rect().min.x + 6.0, ui.max_rect().min.y + 4.0),
+                                    Pos2::new(ui.max_rect().max.x - 6.0, ui.max_rect().min.y + 5.0),
+                                ),
+                                0.0,
+                                LINE,
+                            );
+                            if adding {
+                                let (row, _) = ui.allocate_exact_size(
+                                    Vec2::new(ui.available_width(), 30.0),
+                                    Sense::hover(),
+                                );
+                                let field_w = row.width() - 54.0;
+                                let response = egui::TextEdit::singleline(&mut app.subject_draft)
+                                    .desired_width(field_w)
+                                    .font(egui::FontSelection::FontId(font(12.5, fonts::UI)))
+                                    .text_color(INK)
+                                    .frame(egui::Frame::NONE)
+                                    .show(ui);
+                                response.response.request_focus();
+                                ui.painter().text(
+                                    Pos2::new(row.max.x - 8.0, row.center().y),
+                                    Align2::RIGHT_CENTER,
+                                    "↵",
+                                    font(12.0, fonts::UI),
+                                    INK_FAINT,
+                                );
+                                let title = app.subject_draft.trim().to_string();
+                                let submit =
+                                    ui.input(|i| i.key_pressed(egui::Key::Enter)) && !title.is_empty();
+                                let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                if submit {
+                                    app.send_timer(TimerCmd::CreateSubject(title));
+                                    app.subject_draft.clear();
+                                    // The input folds back into "+ add subject";
+                                    // the menu stays open so the new row is visible
+                                    // once the timer thread reloads the list.
+                                    app.subject_creating = None;
+                                } else if cancel {
+                                    app.subject_draft.clear();
+                                    app.subject_creating = None;
+                                }
+                            } else {
+                                let (row, resp) = ui.allocate_exact_size(
+                                    Vec2::new(ui.available_width(), 30.0),
+                                    Sense::click(),
+                                );
+                                if resp.hovered() {
+                                    ui.painter().rect_filled(row, 2.0, SURFACE);
+                                }
+                                ui.painter().text(
+                                    Pos2::new(row.min.x + 8.0, row.center().y),
+                                    Align2::LEFT_CENTER,
+                                    "+ add subject",
+                                    font(12.0, fonts::MONO),
+                                    if resp.hovered() { INK } else { INK_FAINT },
+                                );
+                                if resp.clicked() && enabled {
+                                    app.subject_creating = Some(String::new());
+                                    app.subject_draft.clear();
                                 }
                             }
                         });
@@ -854,22 +923,27 @@ fn subject_panel(app: &mut MptApp, ctx: &egui::Context, ui: &mut Ui, rect: Rect,
     let _ = ctx;
 }
 
-/// Small "check for updates" control at the footer's right edge. Each state
-/// paints itself and answers clicks; the heavy work lives in `updater`'s
-/// worker threads, so this only reads the shared state.
+/// Update control at the footer's right edge, hidden unless a newer release
+/// is actually available. The check runs once at startup, silently; only
+/// Available, Ready and Failed ever paint.
 fn update_button(app: &mut MptApp, ui: &mut Ui, rect: Rect) {
     let state = app.update.lock().unwrap().clone();
-    // Repaint while the state can move on its own (spinner, progress).
-    if matches!(state, crate::updater::UpdateState::Checking)
-        || matches!(state, crate::updater::UpdateState::Downloading { .. })
-    {
+    // Repaint while the state can move on its own (progress line).
+    if matches!(state, crate::updater::UpdateState::Downloading { .. }) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
     }
 
+    let visible = matches!(
+        state,
+        crate::updater::UpdateState::Available { .. }
+            | crate::updater::UpdateState::Ready
+            | crate::updater::UpdateState::Failed(_)
+    );
+    if !visible {
+        return;
+    }
+
     let (label, text_color, clickable): (String, Color32, bool) = match &state {
-        crate::updater::UpdateState::Idle => ("check for updates".into(), INK_FAINT, true),
-        crate::updater::UpdateState::Checking => ("checking…".into(), INK_FAINT, false),
-        crate::updater::UpdateState::UpToDate => ("up to date".into(), INK_FAINT, true),
         crate::updater::UpdateState::Available { version, .. } => {
             (format!("update to {version}"), ACCENT, true)
         }
@@ -880,6 +954,7 @@ fn update_button(app: &mut MptApp, ui: &mut Ui, rect: Rect) {
         ),
         crate::updater::UpdateState::Ready => ("restart to finish".into(), ACCENT, true),
         crate::updater::UpdateState::Failed(_) => ("retry update".into(), ACCENT, true),
+        _ => return,
     };
 
     let resp = ui.interact(rect, sid("mpt.update"), Sense::click());
@@ -913,9 +988,7 @@ fn update_button(app: &mut MptApp, ui: &mut Ui, rect: Rect) {
         return;
     }
     match state {
-        crate::updater::UpdateState::Idle
-        | crate::updater::UpdateState::UpToDate
-        | crate::updater::UpdateState::Failed(_) => {
+        crate::updater::UpdateState::Failed(_) => {
             crate::updater::check(app.update.clone());
         }
         crate::updater::UpdateState::Available { url, .. } => {
@@ -924,7 +997,7 @@ fn update_button(app: &mut MptApp, ui: &mut Ui, rect: Rect) {
         crate::updater::UpdateState::Ready => {
             crate::updater::apply(app.update.clone());
         }
-        crate::updater::UpdateState::Checking | crate::updater::UpdateState::Downloading { .. } => {}
+        _ => {}
     }
 }
 
