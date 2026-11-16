@@ -856,6 +856,7 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
     if body.width() < 40.0 || body.height() < 30.0 {
         return;
     }
+    // Flutter: Padding LTRB(16, 10, 12, 12).
     let inner = Rect::from_min_max(
         Pos2::new(body.min.x + 16.0, body.min.y + 10.0),
         Pos2::new(body.max.x - 12.0, body.max.y - 12.0),
@@ -865,40 +866,68 @@ fn mini_body(app: &mut MptApp, ui: &mut Ui, snap: &Snap) {
     let resting = t.is_resting;
     let busy = t.busy;
 
-    // Two 36 px actions on the right.
-    let actions_w = 72.0;
-    let mut x = inner.min.x;
-    if running {
-        ui.painter()
-            .circle_filled(Pos2::new(x + 2.0, inner.min.y + 5.0), 2.0, ACCENT);
-        x += 9.0;
+    // Two 36 px actions on the right, vertically centred.
+    let btn_y = inner.center().y - 18.0;
+    let play_rect = Rect::from_min_size(Pos2::new(inner.max.x - 72.0, btn_y), Vec2::splat(36.0));
+    let stop_rect = Rect::from_min_size(Pos2::new(inner.max.x - 36.0, btn_y), Vec2::splat(36.0));
+
+    // Subject line, ellipsized to the room left of the actions like Flutter's
+    // Flexible text inside the Expanded column.
+    let text_x = inner.min.x + if running { 4.0 + 6.0 } else { 0.0 };
+    let max_text_w = (inner.max.x - 72.0 - 12.0 - text_x).max(40.0);
+    let title = t
+        .current_subject
+        .as_ref()
+        .map(|s| s.title.clone())
+        .unwrap_or_else(|| "No subject".to_string());
+    let chars: Vec<char> = title.chars().collect();
+    let mut subject_galley = ui
+        .painter()
+        .layout_no_wrap(title.clone(), font(11.0, fonts::UI), INK_DIM);
+    if subject_galley.size().x > max_text_w && chars.len() > 1 {
+        let mut n = chars.len();
+        while n > 1 {
+            n -= 1;
+            let shorter: String = chars[..n].iter().collect::<String>() + "…";
+            let g = ui
+                .painter()
+                .layout_no_wrap(shorter, font(11.0, fonts::UI), INK_DIM);
+            if g.size().x <= max_text_w {
+                subject_galley = g;
+                break;
+            }
+        }
     }
-    ui.painter().text(
-        Pos2::new(x, inner.min.y + 1.0),
-        Align2::LEFT_TOP,
-        t.current_subject
-            .as_ref()
-            .map(|s| s.title.as_str())
-            .unwrap_or("No subject"),
-        font(11.0, fonts::UI),
-        INK_DIM,
-    );
-    ui.painter().text(
-        Pos2::new(inner.min.x, inner.min.y + 16.0),
-        Align2::LEFT_TOP,
+
+    // The clock, tightened by the original's -1.5 letter spacing.
+    let mut clock_job = egui::text::LayoutJob::simple(
         format_clock(t.session_elapsed_ms),
         font(34.0, fonts::MONO),
         if running { INK } else { INK_DIM },
+        f32::INFINITY,
     );
+    clock_job.sections[0].format.extra_letter_spacing = -1.5;
+    let clock_galley = ui.painter().layout_job(clock_job);
 
-    let btn_y = (inner.min.y + inner.max.y) / 2.0 - 18.0;
-    let play_rect = Rect::from_min_size(
-        Pos2::new(inner.max.x - actions_w, btn_y),
-        Vec2::splat(36.0),
-    );
-    let stop_rect = Rect::from_min_size(
-        Pos2::new(inner.max.x - 36.0, btn_y),
-        Vec2::splat(36.0),
+    // Text column centred vertically (Flutter's MainAxisAlignment.center):
+    // subject row, 2 px gap, clock.
+    let block_h = subject_galley.size().y + 2.0 + clock_galley.size().y;
+    let block_top = inner.center().y - block_h * 0.5;
+
+    if running {
+        // 4 px accent dot, centred on the subject line, 6 px before the text.
+        ui.painter().circle_filled(
+            Pos2::new(inner.min.x + 2.0, block_top + subject_galley.size().y * 0.5),
+            2.0,
+            ACCENT,
+        );
+    }
+    ui.painter()
+        .galley(Pos2::new(text_x, block_top), subject_galley.clone(), INK_DIM);
+    ui.painter().galley(
+        Pos2::new(inner.min.x, block_top + subject_galley.size().y + 2.0),
+        clock_galley,
+        if running { INK } else { INK_DIM },
     );
 
     // Starting needs a subject; pausing and stopping always work.

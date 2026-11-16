@@ -47,5 +47,4 @@ jobs:
           files: Mpt-windows-x64.zip
           body: |
             Fixed Bug:
-            - TODAY header sat at the wrong spot (it slipped off the window edge when the header gained letter spacing): it is right-aligned to the column edge again, above the day total.
-            - The first seconds after sign-in looked broken: the home screen drew empty while subjects and today's numbers were still loading from the API. The window now holds the title bar with a quiet spinner until the data lands, and the 300 ms settle fade covers the switch — no glow, no blur, no new dependencies.
+            - Mini player looked out of place: the subject and clock were pinned to the top of the window instead of centred, the clock had no tracking, and long subjects overflowed the action buttons. The text column is now vertically centred like the original, the clock carries the original's tight spacing, long subject names ellipsize, the live dot sits on the subject line, and the play/stop buttons are centred with it.
